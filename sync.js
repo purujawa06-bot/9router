@@ -1,13 +1,14 @@
 const fs = require('fs');
 const https = require('https');
 
-const DB_PATH = '/app/data/9router.db';
-const REPO_PATH = '/repos/purujawa06-bot/9router/contents/9router.db';
+// Path database yang benar sesuai log kamu
+const DB_PATH = '/app/data/db/data.sqlite'; 
+const REPO_PATH = '/repos/purujawa06-bot/9router/contents/db/data.sqlite';
 const TOKEN = process.env.TOKEN_GH;
 
 function isSQLiteValid(filePath) {
     if (!fs.existsSync(filePath)) return false;
-    // SQLite selalu diawali dengan string "SQLite format 3"
+    // Cek header SQLite
     const buffer = Buffer.alloc(16);
     const fd = fs.openSync(filePath, 'r');
     fs.readSync(fd, buffer, 0, 16);
@@ -16,13 +17,8 @@ function isSQLiteValid(filePath) {
 }
 
 function downloadDatabase() {
-    // 1. Jika database lokal sudah ada dan valid, JANGAN DOWNLOAD
-    if (isSQLiteValid(DB_PATH)) {
-        console.log('[Sync] Database lokal valid, skip download.');
-        return;
-    }
+    if (isSQLiteValid(DB_PATH)) return;
 
-    console.log('[Sync] Mendownload database dari GitHub...');
     const options = {
         hostname: 'api.github.com',
         path: REPO_PATH,
@@ -37,25 +33,25 @@ function downloadDatabase() {
     https.get(options, (res) => {
         if (res.statusCode !== 200) return;
         
+        // Pastikan folder tujuan ada
+        const dir = '/app/data/db';
+        if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+        
         const tempPath = DB_PATH + '.tmp';
         const file = fs.createWriteStream(tempPath);
         res.pipe(file);
         
         file.on('finish', () => {
-            // 2. Hanya timpa jika hasil download-nya valid format SQLite
             if (isSQLiteValid(tempPath)) {
                 fs.renameSync(tempPath, DB_PATH);
-                console.log('[Sync] Database berhasil dipulihkan dari GitHub!');
-            } else {
-                console.log('[Sync] File di GitHub bukan database valid, mengabaikan...');
-                fs.unlinkSync(tempPath);
+                console.log('[Sync] Database berhasil dipulihkan!');
             }
         });
     });
 }
 
 function uploadDatabase() {
-    if (!isSQLiteValid(DB_PATH)) return; // Jangan upload file rusak
+    if (!isSQLiteValid(DB_PATH)) return;
 
     const optionsGet = {
         hostname: 'api.github.com',
