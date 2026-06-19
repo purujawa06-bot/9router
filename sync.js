@@ -5,14 +5,24 @@ const DB_PATH = '/app/data/9router.db';
 const REPO_PATH = '/repos/purujawa06-bot/9router/contents/9router.db';
 const TOKEN = process.env.TOKEN_GH;
 
-// Fungsi untuk download database dari GitHub ke container saat startup
+function isSQLiteValid(filePath) {
+    if (!fs.existsSync(filePath)) return false;
+    // SQLite selalu diawali dengan string "SQLite format 3"
+    const buffer = Buffer.alloc(16);
+    const fd = fs.openSync(filePath, 'r');
+    fs.readSync(fd, buffer, 0, 16);
+    fs.closeSync(fd);
+    return buffer.toString().includes('SQLite format 3');
+}
+
 function downloadDatabase() {
-    if (fs.existsSync(DB_PATH) && fs.statSync(DB_PATH).size > 0) {
-        console.log('[Sync] Database lokal ditemukan, lanjut start...');
+    // 1. Jika database lokal sudah ada dan valid, JANGAN DOWNLOAD
+    if (isSQLiteValid(DB_PATH)) {
+        console.log('[Sync] Database lokal valid, skip download.');
         return;
     }
 
-    console.log('[Sync] Database kosong/tidak ada, mendownload dari GitHub...');
+    console.log('[Sync] Mendownload database dari GitHub...');
     const options = {
         hostname: 'api.github.com',
         path: REPO_PATH,
@@ -25,17 +35,28 @@ function downloadDatabase() {
     };
 
     https.get(options, (res) => {
-        const file = fs.createWriteStream(DB_PATH);
+        if (res.statusCode !== 200) return;
+        
+        const tempPath = DB_PATH + '.tmp';
+        const file = fs.createWriteStream(tempPath);
         res.pipe(file);
-        file.on('finish', () => console.log('[Sync] Database berhasil didownload!'));
-    }).on('error', (err) => console.error('[Sync] Gagal download:', err.message));
+        
+        file.on('finish', () => {
+            // 2. Hanya timpa jika hasil download-nya valid format SQLite
+            if (isSQLiteValid(tempPath)) {
+                fs.renameSync(tempPath, DB_PATH);
+                console.log('[Sync] Database berhasil dipulihkan dari GitHub!');
+            } else {
+                console.log('[Sync] File di GitHub bukan database valid, mengabaikan...');
+                fs.unlinkSync(tempPath);
+            }
+        });
+    });
 }
 
-// Fungsi untuk upload ke GitHub jika ada perubahan
 function uploadDatabase() {
-    if (!fs.existsSync(DB_PATH)) return;
+    if (!isSQLiteValid(DB_PATH)) return; // Jangan upload file rusak
 
-    // Ambil SHA dari file di GitHub agar bisa di-update
     const optionsGet = {
         hostname: 'api.github.com',
         path: REPO_PATH,
@@ -51,11 +72,10 @@ function uploadDatabase() {
             const sha = json.sha;
             const localContent = fs.readFileSync(DB_PATH, { encoding: 'base64' });
 
-            // Hanya upload jika isi file berbeda (cek sederhana)
             if (json.content && json.content.replace(/\n/g, '') === localContent) return;
 
             const body = JSON.stringify({
-                message: 'chore: auto-sync 9router.db',
+                message: 'chore: auto-sync database',
                 content: localContent,
                 sha: sha
             });
@@ -74,13 +94,10 @@ function uploadDatabase() {
             const req = https.request(optionsPut);
             req.write(body);
             req.end();
-            console.log('[Sync] Database berhasil di-push ke GitHub.');
+            console.log('[Sync] Database berhasil di-push.');
         });
     });
 }
 
-// Eksekusi Download saat startup
 downloadDatabase();
-
-// Polling setiap 5 menit untuk upload
 setInterval(uploadDatabase, 300000);
