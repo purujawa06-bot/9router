@@ -184,15 +184,35 @@ export function openaiResponsesToOpenAIRequest(model, body, stream, credentials)
   ];
   if (responseTools.length > 0) {
     result.tools = responseTools
-      .map(tool => {
+      .flatMap(tool => {
         // Already in Chat Completions format: { type: "function", function: { name, ... } }
         if (tool.function) return tool;
+        // Responses API namespace tool (e.g. codex `collaboration`): a group of sub-tools.
+        // Chat Completions has no namespace concept, so expand each sub-tool into an
+        // individual `{namespace}.{subtool}` function. The response side splits the name
+        // back into Responses `name` + `namespace`.
+        if (tool.type === "namespace" && Array.isArray(tool.tools)) {
+          const ns = tool.name || "";
+          return tool.tools
+            .filter(sub => sub && sub.name)
+            .map(sub => ({
+              type: OPENAI_BLOCK.FUNCTION,
+              function: {
+                name: ns ? `${ns}.${sub.name}` : sub.name,
+                description: String(sub.description || tool.description || ""),
+                parameters: normalizeToolParameters(sub.parameters),
+                strict: sub.strict
+              }
+            }));
+        }
         // Responses API function/custom tool: { type, name, description, parameters|format }.
         // Chat Completions has no freeform custom-tool declaration, so expose custom
         // tools as functions with one raw `input` string while retaining their names
         // in translator-only metadata for the response conversion.
         const name = tool.name;
         if (!name || typeof name !== "string" || name.trim() === "") return null;
+        // Some providers reject dotted tool names; sanitize every function/custom tool
+        // name and keep the map so the response side restores the original.
         if (tool.type === "custom") {
           customToolNames.add(name);
           const formatHint = [tool.format?.syntax, tool.format?.definition].filter(Boolean).join("\n");
