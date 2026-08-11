@@ -21,7 +21,12 @@ function splitToolName(name) {
   let n = name;
   if (n.startsWith("functions.")) n = n.slice("functions.".length);
   const dot = n.indexOf(".");
-  if (dot < 0) return { name: n, namespace: null };
+  if (dot < 0) {
+    if (globalThis.__CB_NS_TOOLS__ && globalThis.__CB_NS_TOOLS__[n]) {
+      return { name: n, namespace: globalThis.__CB_NS_TOOLS__[n] };
+    }
+    return { name: n, namespace: null };
+  }
   return { name: n.slice(dot + 1), namespace: n.slice(0, dot) };
 }
 

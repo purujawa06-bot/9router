@@ -207,6 +207,12 @@ export function openaiResponsesToOpenAIRequest(model, body, stream, credentials)
           return tool.tools
             .filter(sub => sub && sub.name)
             .map(sub => {
+              // Keep a flat-name -> namespace map so the response side can route a
+              // tool call that arrives by flat name (wait_agent, not collaboration.wait_agent).
+              if (ns) {
+                globalThis.__CB_NS_TOOLS__ ||= {};
+                globalThis.__CB_NS_TOOLS__[sub.name] = ns;
+              }
               // Some providers (deepseek, codebuddy) reject dotted tool names, so
               // sanitize dots to `__` on the way out and keep the map for the
               // response side to restore the namespace-qualified name.
