@@ -15,6 +15,9 @@ import { ROLE, OPENAI_BLOCK, RESPONSES_ITEM, OPENAI_FINISH, MODEL_FALLBACK } fro
 // can route the tool call. Flat names pass through unchanged.
 function splitToolName(name) {
   if (typeof name !== "string") return { name: name || "", namespace: null };
+  if (globalThis.__CB_TOOL_MAP__ && globalThis.__CB_TOOL_MAP__[name]) {
+    name = globalThis.__CB_TOOL_MAP__[name];
+  }
   let n = name;
   if (n.startsWith("functions.")) n = n.slice("functions.".length);
   const dot = n.indexOf(".");
