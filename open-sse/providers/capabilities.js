@@ -238,6 +238,13 @@ export const PROVIDER_CAPABILITIES = {
     // contract). maxOutput 128000 per the server's product-config payload.
     "deepseek-v4.1-flash": { vision: true, reasoning: true, thinkingFormat: "openai", thinkingCanDisable: true, contextWindow: 1000000, maxOutput: 128000 },
   },
+  // CodeBuddy intl — same gateway catalog as CN, so deepseek-v4.1-flash mirrors
+  // the codebuddy-cn entry (the openai-style reasoning_effort format matters:
+  // the generic *deepseek-v4* pattern would otherwise pick the vendor-native
+  // "deepseek" thinking shape, which the CodeBuddy gateway does not accept).
+  "codebuddy-intl": {
+    "deepseek-v4.1-flash": { vision: true, reasoning: true, thinkingFormat: "openai", thinkingCanDisable: true, contextWindow: 1000000, maxOutput: 128000 },
+  },
   // Qoder — upstream exposes opaque internal ids (dfmodel, kmodel, …); the
   // registry `name` is display-only and capability lookup matches on the raw
   // id, so every qoder model would fall through to DEFAULT_CAPABILITIES
