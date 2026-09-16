@@ -4,6 +4,24 @@
 - **Update notification**: follows fork tags — if the newest `v*` tag is newer than the running version, dashboard + CLI offer an update (`/api/version`, CLI startup check)
 - **npm release**: CI builds the packed CLI module on every `v*` tag and publishes it to npm; install via `npm i -g @rikipurpur/9router`
 - **Streaming**: treat empty SSE/JSON responses (DONE without content or tool calls) as failures so account/combo fallback triggers
+- **Xiaomi MiMo**: merge MiMo Desktop support into `xiaomi-mimo` with dual auth (API key + Desktop/OAuth session), Preview models support, and encrypted-callback OAuth flow
+- **Claude Code**: add 1M-context toggle (`[1m]` marker) and drive `CLAUDE_CODE_AUTO_COMPACT_WINDOW` directly from the dashboard
+- **Models**: add DeepSeek-V4.1-Flash to DeepSeek provider, CodeBuddy-Intl, and Ollama (`deepseek-v4.1-flash:cloud`); enable `low`..`max` reasoning effort levels and vision capability for DeepSeek-V4.*
+- **i18n**: integrate Persian (fa) translation
+
+## Fixes
+- **Cursor**: stop AgentService empty turns (`OUT 0`) and silent hangs — fold system prompts instead of `custom_system_prompt`, send `ModelDetails`, read Composer/Grok `thinking_delta`, ack request-context without echoing MCP tools, and reject IDE execs so the model can continue
+- **RTK**: for Cursor, compress source-format `tool_result` / `role:tool` **before** translation — its translator rewrites those shapes, so post-translate compression missed them. Other providers keep the post-translate pass unchanged
+- **OpenCode / OpenCode Go**: resolve 403 `FreeTierError` and 429 rate limits with canonical session format, valid User-Agent, and stable upstream session reuse; force stream and declare `forceStream` for free-tier SSE aggregation; cloak decoy tools, normalize Muse Free tool choice, and strip prior reasoning items on Responses models; route Union Alpha via Messages API
+- **Kiro**: preserve underscores in tool names (`mcp__server__tool`) and restore client tool names in responses; use neutral placeholder for tool-result-only turns; forward tool-result images
+- **Stream**: report aborts after HTTP 200 in-band (per-format error frames) instead of closing silently
+- **Command Code**: preserve images and `reasoning_effort` on `/alpha/generate`; retry transient stream errors and avoid fake stop chunks; add Quota Tracker support
+- **Zed**: harden OAuth lifecycle (preserve `systemId`, renew proxy timeout), support live model resolution, and lower display priority in OAuth list
+- **Antigravity**: scope cached thought signatures to model family; strip Claude Code billing headers from system prompts; sanitize Hermes system identity
+- **Codex**: route bare `codex-auto-review` requests to the Codex provider (#4135)
+- **Auth**: do not cool down an account for request-scoped 4xx errors
+- **Usage**: improve DeepSeek credit balance display as currency credit instead of 0/total quota bar
+- **Model Catalog**: scope synced catalog to gateways and declare vision capabilities for DeepSeek V4.1-Flash IDs
 
 # v0.5.75 (2026-09-10)
 

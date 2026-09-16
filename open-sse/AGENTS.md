@@ -4,7 +4,7 @@ Provider-agnostic SSE engine: one OpenAI-style request → any provider (LLM cha
 
 ## Request lifecycle (chat)
 
-`handlers/chatCore.js` → `services/model.js` `parseModel` (resolve `provider/model`) → **pre-translate hooks** (`rtk/` tool_result compress, `rtk/caveman.js` system inject — all fail-open) → `executors/index.js` `getExecutor(provider)` → `translator/index.js` `translateRequest` (client format → provider format) → `executor.execute()` (streams upstream) → `translateResponse` (provider chunks → client format) → SSE out.
+`handlers/chatCore.js` → `services/model.js` `parseModel` (resolve `provider/model`) → **pre-translate hooks** (`rtk/` tool_result compress — for `cursor` this runs before translate since its translator rewrites those shapes; `rtk/caveman.js` / `rtk/ponytail.js` system inject — all fail-open) → `executors/index.js` `getExecutor(provider)` → `translator/index.js` `translateRequest` (client format → provider format) → **post-translate savers** (`rtk/` compress for every other provider — all fail-open) → `executor.execute()` (streams upstream) → `translateResponse` (provider chunks → client format) → SSE out.
 
 ## Directory map
 
