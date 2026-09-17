@@ -7,11 +7,11 @@
 [![npm](https://img.shields.io/npm/v/@purujawa06-bot/9router.svg)](https://www.npmjs.com/package/@purujawa06-bot/9router)
 [![Downloads](https://img.shields.io/npm/dm/@purujawa06-bot/9router.svg)](https://www.npmjs.com/package/@purujawa06-bot/9router)
 [![GHCR](https://img.shields.io/badge/GHCR-purujawa06--bot%2F9router-blue?logo=github)](https://github.com/purujawa06-bot/9router/pkgs/container/9router)
-[![License](https://img.shields.io/npm/l/9router.svg)](https://github.com/decolua/9router/blob/main/LICENSE)
+[![License](https://img.shields.io/npm/l/@purujawa06-bot/9router.svg)](https://github.com/purujawa06-bot/9router/blob/master/LICENSE)
 
-<a href="https://trendshift.io/repositories/22628" target="_blank"><img src="https://trendshift.io/api/badge/repositories/22628" alt="decolua%2F9router | Trendshift" style="width: 250px; height: 55px;" width="250" height="55"/></a>
+> Fork of [decolua/9router](https://github.com/decolua/9router) — published to npm as `@purujawa06-bot/9router` because the unscoped name is owned by upstream.
 
-[🌐 Website](https://9router.com) • [📖 Full Docs](https://github.com/decolua/9router)
+[📖 Docs & Source](https://github.com/purujawa06-bot/9router)
 
 ---
 
@@ -107,11 +107,10 @@ Any tool supporting OpenAI/Claude-compatible API works.
 
 ## 📚 Documentation
 
-Full docs, advanced setup, video tutorials & development guide:
+Full docs, advanced setup & development guide:
 
-- **GitHub**: https://github.com/decolua/9router
-- **Full README**: https://github.com/decolua/9router/blob/main/app/README.md
-- **Website**: https://9router.com
+- **GitHub (this fork)**: https://github.com/purujawa06-bot/9router
+- **Upstream**: https://github.com/decolua/9router
 
 ---
 

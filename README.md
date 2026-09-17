@@ -5,7 +5,7 @@
 ## Install
 
 - Docker: `ghcr.io/purujawa06-bot/9router:latest`
-- npm: `npm install -g github:purujawa06-bot/9router#release`
+- npm: `npm install -g @purujawa06-bot/9router`
 
 Update mengikuti git tags fork — setiap tag `v*` baru, dashboard & CLI menampilkan notifikasi update otomatis.
 
