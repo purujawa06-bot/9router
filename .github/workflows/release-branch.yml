@@ -32,8 +32,8 @@ jobs:
         with:
           node-version: 22
 
-      - name: Install root deps
-        run: npm ci --no-audit --no-fund
+      - name: Install root deps (no lockfile in repo — use install, not ci)
+        run: npm install --no-audit --no-fund
 
       - name: Install CLI build deps
         run: npm install --prefix cli --no-audit --no-fund
