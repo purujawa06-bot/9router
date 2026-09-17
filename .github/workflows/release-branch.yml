@@ -16,6 +16,11 @@ on:
     tags:
       - "v*"
   workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Build + pack only, do not push to the release branch"
+        type: boolean
+        default: true
 
 permissions:
   contents: write
@@ -97,6 +102,10 @@ jobs:
           test -f /tmp/rel/app/custom-server.js || test -f /tmp/rel/app/server.js
           node -p "const p=require('/tmp/rel/package.json'); if(p.name!=='9router'||!p.bin?.['9router']) throw new Error('bad package'); p.version"
           cp CHANGELOG.md /tmp/rel/CHANGELOG.md
+          if [ "${{ inputs.dry_run }}" = "true" ]; then
+            echo "DRY RUN — build + sanity checks passed, skipping push to release branch"
+            exit 0
+          fi
           cd /tmp/rel
           git init -b release
           git config user.name "github-actions[bot]"
