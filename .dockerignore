@@ -1,6 +1,7 @@
 # VCS
 .git
 **/.git
+.github
 
 # Editor
 .vscode
@@ -9,10 +10,23 @@
 # Dependencies and build output
 node_modules
 .next
+.next-cli-build
 out
 build
 dist
 coverage
+
+# Heavy dirs not needed for the server image (smaller context = faster CI upload)
+tests
+docs
+gitbook
+gitbooks
+cli
+skills
+images
+open-sse.old
+.next-analyze
+*.md
 
 # Runtime data and logs
 data
