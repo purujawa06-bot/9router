@@ -43,16 +43,24 @@ jobs:
         env:
           NEXT_PUBLIC_BASE_URL: http://localhost:20128
 
-      - name: Verify tag matches CLI version
+      - name: Sync version from tag
+        # Tags are the single source of truth — no manual package.json bump
+        # needed. The release module is stamped with the tag version.
         run: |
-          if [[ "${{ github.ref_name }}" == v* ]]; then
-            TAG_VER="${{ github.ref_name }}"
-            TAG_VER="${TAG_VER#v}"
-            PKG_VER=$(node -p "require('./cli/package.json').version")
-            if [ "$TAG_VER" != "$PKG_VER" ]; then
-              echo "::error::Tag v$TAG_VER does not match cli/package.json version $PKG_VER. Bump the version first."
-              exit 1
-            fi
+          REF="${{ github.ref_name }}"
+          if [[ "$REF" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            VER="${REF#v}"
+            echo "Syncing package versions to $VER (from tag $REF)"
+            VER="$VER" node -e "
+              const fs = require('fs');
+              for (const f of ['package.json', 'cli/package.json']) {
+                const p = JSON.parse(fs.readFileSync(f, 'utf8'));
+                p.version = process.env.VER;
+                fs.writeFileSync(f, JSON.stringify(p, null, 2) + '\n');
+              }
+            "
+          else
+            echo "Not a version tag ($REF) — keeping package.json versions"
           fi
 
       - name: Pack CLI module
