@@ -15,13 +15,13 @@ export const GITHUB_CONFIG = {
 
 // Updater configuration (follows the purujawa06-bot fork).
 // Installs come from npm — CI publishes the packed CLI module as
-// `@purujawa06-bot/9router` on every v* tag.
+// `@rikipurpur/9router` on every v* tag.
 export const UPDATER_CONFIG = {
   updateRepo: "purujawa06-bot/9router",
-  npmPackageName: "@purujawa06-bot/9router",
+  npmPackageName: "@rikipurpur/9router",
   binName: "9router",
-  installCmd: "npm i -g @purujawa06-bot/9router",
-  installCmdLatest: "npm i -g @purujawa06-bot/9router@latest",
+  installCmd: "npm i -g @rikipurpur/9router",
+  installCmdLatest: "npm i -g @rikipurpur/9router@latest",
   shutdownCountdownSec: 3,
   exitDelayMs: 500,
   statusPort: 20129,

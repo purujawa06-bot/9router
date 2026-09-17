@@ -4,12 +4,12 @@
 
 **Connect All AI Code Tools (Claude Code, Cursor, Antigravity, Copilot, Codex, Gemini, OpenCode, Cline, OpenClaw...) to 40+ AI Providers & 100+ Models.**
 
-[![npm](https://img.shields.io/npm/v/@purujawa06-bot/9router.svg)](https://www.npmjs.com/package/@purujawa06-bot/9router)
-[![Downloads](https://img.shields.io/npm/dm/@purujawa06-bot/9router.svg)](https://www.npmjs.com/package/@purujawa06-bot/9router)
+[![npm](https://img.shields.io/npm/v/@rikipurpur/9router.svg)](https://www.npmjs.com/package/@rikipurpur/9router)
+[![Downloads](https://img.shields.io/npm/dm/@rikipurpur/9router.svg)](https://www.npmjs.com/package/@rikipurpur/9router)
 [![GHCR](https://img.shields.io/badge/GHCR-purujawa06--bot%2F9router-blue?logo=github)](https://github.com/purujawa06-bot/9router/pkgs/container/9router)
-[![License](https://img.shields.io/npm/l/@purujawa06-bot/9router.svg)](https://github.com/purujawa06-bot/9router/blob/master/LICENSE)
+[![License](https://img.shields.io/npm/l/@rikipurpur/9router.svg)](https://github.com/purujawa06-bot/9router/blob/master/LICENSE)
 
-> Fork of [decolua/9router](https://github.com/decolua/9router) — published to npm as `@purujawa06-bot/9router` because the unscoped name is owned by upstream.
+> Fork of [decolua/9router](https://github.com/decolua/9router) — published to npm as `@rikipurpur/9router` because the unscoped name is owned by upstream.
 
 [📖 Docs & Source](https://github.com/purujawa06-bot/9router)
 
@@ -39,11 +39,11 @@
 **Option 1 — npm (recommended for desktop):**
 
 ```bash
-npm install -g @purujawa06-bot/9router
+npm install -g @rikipurpur/9router
 9router
 
 # Or run directly with npx
-npx @purujawa06-bot/9router
+npx @rikipurpur/9router
 ```
 
 **Option 2 — Docker (server/VPS):**

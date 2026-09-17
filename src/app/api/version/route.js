@@ -6,7 +6,7 @@ import pkg from "../../../../package.json" with { type: "json" };
 // (e.g. E403) must NOT trigger the banner, so npm dist-tags is checked first
 // and git tags are only a fallback when npm is unreachable.
 // Override with UPDATE_CHECK_NPM=@scope/name or UPDATE_CHECK_REPO=owner/repo.
-const NPM_PACKAGE = process.env.UPDATE_CHECK_NPM || "@purujawa06-bot/9router";
+const NPM_PACKAGE = process.env.UPDATE_CHECK_NPM || "@rikipurpur/9router";
 const UPDATE_CHECK_REPO = process.env.UPDATE_CHECK_REPO || "purujawa06-bot/9router";
 const VERSION_CACHE_TTL_MS = 3600000; // cache tags lookup for 1h
 

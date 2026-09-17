@@ -9,7 +9,7 @@ const path = require("path");
 const fs = require("fs");
 const os = require("os");
 
-const packageName = process.env.UPDATER_PKG_NAME || "@purujawa06-bot/9router@latest";
+const packageName = process.env.UPDATER_PKG_NAME || "@rikipurpur/9router@latest";
 const port = parseInt(process.env.UPDATER_PORT || "20129", 10);
 const tailLines = parseInt(process.env.UPDATER_TAIL_LINES || "8", 10);
 const maxRetries = parseInt(process.env.UPDATER_RETRIES || "3", 10);

@@ -460,7 +460,7 @@ function isRestrictedEnvironment() {
 // (e.g. E403) must NOT offer an update, so npm dist-tags is checked first
 // and git tags are only a fallback when npm is unreachable.
 // Override with UPDATE_CHECK_NPM=@scope/name or UPDATE_CHECK_REPO=owner/repo.
-const NPM_PACKAGE = process.env.UPDATE_CHECK_NPM || "@purujawa06-bot/9router";
+const NPM_PACKAGE = process.env.UPDATE_CHECK_NPM || "@rikipurpur/9router";
 const UPDATE_CHECK_REPO = process.env.UPDATE_CHECK_REPO || "purujawa06-bot/9router";
 
 // Pick the newest x.y.z from a GitHub tags list (tag names like "v0.5.76").

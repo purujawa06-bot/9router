@@ -1,14 +1,14 @@
 name: Publish to npm
 
 # On every version tag (v*), build the installable CLI module and publish it
-# to npm as `@purujawa06-bot/9router`, so users can install without any
+# to npm as `@rikipurpur/9router`, so users can install without any
 # build tools:
 #
-#   npm i -g @purujawa06-bot/9router
+#   npm i -g @rikipurpur/9router
 #
 # NOTE: the npm name is scoped because unscoped `9router` is owned by
 # upstream (decolua). The tarball of a scoped package is
-# `<scope>-<name>-<version>.tgz`, i.e. purujawa06-bot-9router-*.tgz.
+# `<scope>-<name>-<version>.tgz`, i.e. rikipurpur-9router-*.tgz.
 
 on:
   push:
@@ -84,18 +84,18 @@ jobs:
           rm -rf /tmp/rel && mkdir -p /tmp/rel
           ls -la /tmp/dist
           # Guard: refuse a root-package tarball (9router-app-*) — only the
-          # CLI module (purujawa06-bot-9router-X.Y.Z.tgz) may be published.
+          # CLI module (rikipurpur-9router-X.Y.Z.tgz) may be published.
           if ls /tmp/dist/9router-app-*.tgz >/dev/null 2>&1; then
             echo "::error::Wrong tarball packed (root 9router-app instead of CLI module)"
             exit 1
           fi
-          tar -xzf /tmp/dist/purujawa06-bot-9router-[0-9]*.tgz -C /tmp/rel --strip-components=1
+          tar -xzf /tmp/dist/rikipurpur-9router-[0-9]*.tgz -C /tmp/rel --strip-components=1
           # Sanity: refuse to publish a broken module
           test -f /tmp/rel/cli.js
           test -f /tmp/rel/package.json
           ls /tmp/rel/app
           test -f /tmp/rel/app/custom-server.js || test -f /tmp/rel/app/server.js
-          node -p "const p=require('/tmp/rel/package.json'); if(p.name!=='@purujawa06-bot/9router'||!p.bin?.['9router']) throw new Error('bad package'); p.version"
+          node -p "const p=require('/tmp/rel/package.json'); if(p.name!=='@rikipurpur/9router'||!p.bin?.['9router']) throw new Error('bad package'); p.version"
 
       - name: Publish to npm
         if: ${{ inputs.dry_run != true }}
@@ -104,4 +104,4 @@ jobs:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           ls -la /tmp/dist
-          npm publish /tmp/dist/purujawa06-bot-9router-*.tgz --provenance --access public
+          npm publish /tmp/dist/rikipurpur-9router-*.tgz --provenance --access public
