@@ -1,10 +1,12 @@
 import https from "https";
 import pkg from "../../../../package.json" with { type: "json" };
 
-// Update source follows the purujawa06-bot fork (not upstream npm).
-// Notification is tag-driven: if the newest v* tag on the fork is newer
-// than the running version, an update is available.
-// Override with UPDATE_CHECK_REPO=owner/repo if needed.
+// Update source follows the published npm package (releases are npm-only
+// since the `release` branch was dropped). A git tag that failed to publish
+// (e.g. E403) must NOT trigger the banner, so npm dist-tags is checked first
+// and git tags are only a fallback when npm is unreachable.
+// Override with UPDATE_CHECK_NPM=@scope/name or UPDATE_CHECK_REPO=owner/repo.
+const NPM_PACKAGE = process.env.UPDATE_CHECK_NPM || "@purujawa06-bot/9router";
 const UPDATE_CHECK_REPO = process.env.UPDATE_CHECK_REPO || "purujawa06-bot/9router";
 const VERSION_CACHE_TTL_MS = 3600000; // cache tags lookup for 1h
 
@@ -21,6 +23,38 @@ export function pickLatestTagVersion(tags) {
     if (!latest || compareVersions(v, latest) > 0) latest = v;
   }
   return latest;
+}
+
+// Fetch latest published version from the npm registry.
+// Returns null when the package is unpublished yet or npm is unreachable,
+// so the caller can fall back to git tags.
+function fetchNpmLatestVersion() {
+  return new Promise((resolve) => {
+    const req = https.get(
+      `https://registry.npmjs.org/${NPM_PACKAGE.replace("/", "%2f")}/latest`,
+      {
+        timeout: 8000,
+        headers: {
+          "User-Agent": "9router-update-check",
+          Accept: "application/json",
+        },
+      },
+      (res) => {
+        let data = "";
+        res.on("data", (chunk) => (data += chunk));
+        res.on("end", () => {
+          try {
+            const v = JSON.parse(data)?.version;
+            resolve(/^\d+\.\d+\.\d+$/.test(v || "") ? v : null);
+          } catch {
+            resolve(null);
+          }
+        });
+      }
+    );
+    req.on("error", () => resolve(null));
+    req.on("timeout", () => { req.destroy(); resolve(null); });
+  });
 }
 
 // Fetch newest release tag from the fork
@@ -75,7 +109,9 @@ async function getLatestVersionCached() {
 }
 
 export async function GET() {
-  const latestVersion = await getLatestVersionCached();
+  // npm first (what `npm i -g` would actually install); git tags only
+  // as fallback. Either way the banner hides when already on latest.
+  const latestVersion = (await fetchNpmLatestVersion()) || (await getLatestVersionCached());
   const currentVersion = pkg.version;
   const hasUpdate = latestVersion ? compareVersions(latestVersion, currentVersion) > 0 : false;
 

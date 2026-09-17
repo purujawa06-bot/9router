@@ -455,10 +455,12 @@ function isRestrictedEnvironment() {
   return null;
 }
 
-// Update check follows the purujawa06-bot fork's git tags
-// (the npm `9router` package is published from upstream decolua).
-// If the newest v* tag is newer than this install, an update is offered.
-// Override with UPDATE_CHECK_REPO=owner/repo if needed.
+// Update check follows the published npm package (releases are npm-only
+// since the `release` branch was dropped). A git tag that failed to publish
+// (e.g. E403) must NOT offer an update, so npm dist-tags is checked first
+// and git tags are only a fallback when npm is unreachable.
+// Override with UPDATE_CHECK_NPM=@scope/name or UPDATE_CHECK_REPO=owner/repo.
+const NPM_PACKAGE = process.env.UPDATE_CHECK_NPM || "@purujawa06-bot/9router";
 const UPDATE_CHECK_REPO = process.env.UPDATE_CHECK_REPO || "purujawa06-bot/9router";
 
 // Pick the newest x.y.z from a GitHub tags list (tag names like "v0.5.76").
@@ -500,6 +502,16 @@ function checkForUpdate() {
       resolve(version);
     };
 
+    const finish = (latest) => {
+      if (latest && compareVersions(latest, pkg.version) > 0) {
+        done(latest);
+      } else {
+        done(null);
+      }
+    };
+
+    // npm first (what `npm i -g` would actually install); git tags fallback.
+    const checkTags = () => {
     const req = https.get(`https://api.github.com/repos/${UPDATE_CHECK_REPO}/tags?per_page=100`, {
       timeout: 5000,
       headers: {
@@ -511,12 +523,7 @@ function checkForUpdate() {
       res.on("data", chunk => data += chunk);
       res.on("end", () => {
         try {
-          const latest = pickLatestTagVersion(JSON.parse(data));
-          if (latest && compareVersions(latest, pkg.version) > 0) {
-            done(latest);
-          } else {
-            done(null);
-          }
+          finish(pickLatestTagVersion(JSON.parse(data)));
         } catch (e) {
           done(null);
         }
@@ -525,6 +532,33 @@ function checkForUpdate() {
 
     req.on("error", () => done(null));
     req.on("timeout", () => { req.destroy(); done(null); });
+    };
+
+    const npmReq = https.get(`https://registry.npmjs.org/${NPM_PACKAGE.replace("/", "%2f")}/latest`, {
+      timeout: 5000,
+      headers: {
+        "User-Agent": "9router-update-check",
+        Accept: "application/json",
+      },
+    }, (res) => {
+      let data = "";
+      res.on("data", chunk => data += chunk);
+      res.on("end", () => {
+        try {
+          const v = JSON.parse(data)?.version;
+          if (/^\d+\.\d+\.\d+$/.test(v || "")) {
+            finish(v); // npm answered — trust it, even if no update
+          } else {
+            checkTags();
+          }
+        } catch (e) {
+          checkTags();
+        }
+      });
+    });
+
+    npmReq.on("error", checkTags);
+    npmReq.on("timeout", () => { npmReq.destroy(); checkTags(); });
   });
 }
 
