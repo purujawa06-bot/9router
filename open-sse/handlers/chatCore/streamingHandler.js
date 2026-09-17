@@ -5,6 +5,10 @@ import { pipeWithDisconnect } from "../../utils/streamHandler.js";
 import { PROVIDERS } from "../../config/providers.js";
 import { STREAM_STALL_TIMEOUT_MS } from "../../config/runtimeConfig.js";
 import { buildAbortedResponsesTerminalBytes } from "../../utils/responsesStreamHelpers.js";
+import { createErrorResult } from "../../utils/error.js";
+import { HTTP_STATUS } from "../../config/runtimeConfig.js";
+import { trackPendingRequest, appendRequestLog } from "@/lib/usageDb.js";
+import { peekUpstreamForContent, isBinaryContentType } from "./emptyStreamGuard.js";
 import { buildRequestDetail, extractRequestConfig, saveUsageStats, formatDoneLine } from "./requestDetail.js";
 import { saveRequestDetail } from "@/lib/usageDb.js";
 import { SSE_HEADERS_CORS as SSE_HEADERS } from "../../utils/sseConstants.js";
@@ -44,14 +48,6 @@ function buildTransformStream({ provider, sourceFormat, targetFormat, userAgent,
  * Handle streaming response — pipe provider SSE through transform stream to client.
  */
 export async function handleStreamingResponse({ providerResponse, provider, model, sourceFormat, targetFormat, userAgent, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, clientRawRequest, onRequestSuccess, reqLogger, toolNameMap, customToolNames, streamController, onStreamComplete, streamDetailId, pxpipe, reqTag, log, credentials }) {
-  if (onRequestSuccess) {
-    Promise.resolve()
-      .then(onRequestSuccess)
-      .catch(err => {
-        console.error("[ChatCore] onRequestSuccess failed:", err?.message || err);
-      });
-  }
-
   // When upstream returns HTML/text instead of SSE (e.g. Cloudflare 5xx error
   // page), piping it through the SSE transform stream causes Next.js
   // "failed to pipe response" and crashes the chat router. Read the body,
@@ -79,13 +75,63 @@ export async function handleStreamingResponse({ providerResponse, provider, mode
     };
   }
 
+  // Empty-stream guard: an upstream that answers HTTP 200 then closes with
+  // `data: [DONE]` (or finish_reason: stop) but zero content and zero tool
+  // calls must NOT count as success — otherwise account/combo fallback never
+  // triggers and the client receives an empty answer. Peek until the first
+  // client-meaningful chunk; replay the buffered bytes so live streaming is
+  // preserved (only TTFT slips). Binary upstreams skip the guard.
+  let upstreamResponse = providerResponse;
+  // JSON bodies (upstream ignored stream:true) aren't SSE — the peek parser
+  // only understands `data:` lines, so skip the guard for them.
+  const isJsonContent = upstreamContentType.includes("application/json");
+  if (!isBinaryContentType(upstreamContentType) && !isJsonContent) {
+    let peek = null;
+    try {
+      peek = await peekUpstreamForContent(providerResponse, {
+        targetFormat, sourceFormat, toolNameMap, customToolNames,
+        provider, model, sessionId: credentials?._clientSessionId || null,
+      });
+    } catch (e) {
+      peek = null;
+    }
+    if (!peek || peek.empty) {
+      const errMsg = `[${provider}/${model}] Upstream returned empty streaming response (done without content or tool calls)`;
+      trackPendingRequest(model, provider, connectionId, false, true);
+      appendRequestLog({ model, provider, connectionId, status: `FAILED ${HTTP_STATUS.BAD_GATEWAY}` }).catch(() => { });
+      saveRequestDetail(buildRequestDetail({
+        provider, model, connectionId,
+        latency: { ttft: 0, total: Date.now() - requestStartTime },
+        tokens: { prompt_tokens: 0, completion_tokens: 0 },
+        request: extractRequestConfig(body, stream),
+        providerRequest: finalBody || translatedBody || null,
+        response: { error: errMsg, status: HTTP_STATUS.BAD_GATEWAY, thinking: null },
+        pxpipe,
+        status: "error"
+      }, { id: streamDetailId })).catch(() => { });
+      if (log?.errorLine) log.errorLine(reqTag, "✗", `EMPTY ${HTTP_STATUS.BAD_GATEWAY} · ${provider}/${model} · ${Date.now() - requestStartTime}ms\n    ${errMsg}`);
+      else console.warn(`[STREAM] ${provider} | ${model} | empty stream (no content/tool calls) [${HTTP_STATUS.BAD_GATEWAY}]`);
+      streamController?.handleError?.(new Error("upstream empty streaming response"));
+      return createErrorResult(HTTP_STATUS.BAD_GATEWAY, errMsg);
+    }
+    upstreamResponse = peek.response;
+  }
+
+  if (onRequestSuccess) {
+    Promise.resolve()
+      .then(onRequestSuccess)
+      .catch(err => {
+        console.error("[ChatCore] onRequestSuccess failed:", err?.message || err);
+      });
+  }
+
   const transformStream = buildTransformStream({ provider, sourceFormat, targetFormat, userAgent, reqLogger, toolNameMap, customToolNames, model, connectionId, body, onStreamComplete, apiKey, credentials });
 
   // Responses passthrough: synthesize response.failed + [DONE] if the stream aborts/stalls before a terminal event
   const isResponsesPassthrough = sourceFormat === FORMATS.OPENAI_RESPONSES && targetFormat === FORMATS.OPENAI_RESPONSES;
   const onAbortTerminal = isResponsesPassthrough ? buildAbortedResponsesTerminalBytes : null;
   const stallTimeoutMs = PROVIDERS[provider]?.stallTimeoutMs || STREAM_STALL_TIMEOUT_MS;
-  const transformedBody = pipeWithDisconnect(providerResponse, transformStream, streamController, onAbortTerminal, stallTimeoutMs);
+  const transformedBody = pipeWithDisconnect(upstreamResponse, transformStream, streamController, onAbortTerminal, stallTimeoutMs);
 
   saveRequestDetail(buildRequestDetail({
     provider, model, connectionId,
