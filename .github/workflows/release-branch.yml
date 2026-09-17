@@ -74,6 +74,7 @@ jobs:
         # from inside cli/ — otherwise it packs the root 9router-app tree.
         working-directory: cli
         run: |
+          mkdir -p /tmp/dist
           npm pack --pack-destination /tmp/dist
           ls -la /tmp/dist
 
