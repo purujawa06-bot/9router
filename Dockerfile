@@ -15,14 +15,22 @@ FROM base AS builder
 
 # NOTE: package-lock.json is gitignored in this repo, so only package.json is
 # copied. If a lockfile is committed later, add it to the COPY for `npm ci`.
+#
+# Full install here (devDeps for `next build` AND optionalDeps). Do NOT use
+# --omit=optional in this stage:
+#  - lightningcss ships its musl binary (lightningcss-*-musl) as an
+#    optionalDependency — omitting it breaks `next build` on alpine with
+#    "Cannot find module '../lightningcss.linux-x64-musl.node'".
+#  - better-sqlite3 is listed in serverExternalPackages (next.config.mjs), so
+#    Next must be able to resolve it at build time even though the runner
+#    stage intentionally omits it (fail-open fallback to node:sqlite/sql.js).
+# Builds run natively per-arch (no QEMU), so the old arm64-emulation slowness
+# that motivated --omit=optional no longer applies. Build tools are kept so a
+# missing prebuild falls back to node-gyp instead of failing the build.
+RUN apk add --no-cache python3 make g++ libc6-compat
 COPY package.json ./
-# Full install (devDeps needed for `next build`). better-sqlite3 is skipped on
-# purpose (--omit=optional): it is an optionalDependency with a fail-open
-# fallback chain (node:sqlite builtin on Node 22 → sql.js), and its
-# prebuild-download / node-gyp fallback is extremely slow under QEMU
-# emulation on linux/arm64 builds (hours). sql.js stays (regular dep).
 RUN --mount=type=cache,target=/root/.npm \
-  npm install --omit=optional --no-audit --no-fund
+  npm install --no-audit --no-fund
 
 COPY . ./
 ENV NEXT_TELEMETRY_DISABLED=1
