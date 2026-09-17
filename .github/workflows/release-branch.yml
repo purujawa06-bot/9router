@@ -65,9 +65,11 @@ jobs:
           NEXT_PUBLIC_BASE_URL: http://localhost:20128
 
       - name: Pack CLI module
+        # NOTE: `npm pack` ignores --prefix and packs the cwd, so run it
+        # from inside cli/ — otherwise it packs the root 9router-app tree.
+        working-directory: cli
         run: |
-          mkdir -p /tmp/dist
-          npm --prefix cli pack --pack-destination /tmp/dist
+          npm pack --pack-destination /tmp/dist
           ls -la /tmp/dist
 
       - name: Publish to release branch
@@ -78,8 +80,14 @@ jobs:
           rm -rf /tmp/rel && mkdir -p /tmp/rel
           echo "--- tarballs ---"
           ls -la /tmp/dist
+          # Guard: refuse a root-package tarball (9router-app-*) — only the
+          # CLI module (9router-X.Y.Z.tgz) may be published.
+          if ls /tmp/dist/9router-app-*.tgz >/dev/null 2>&1; then
+            echo "::error::Wrong tarball packed (root 9router-app instead of CLI module)"
+            exit 1
+          fi
           echo "--- extract ---"
-          tar -xzf /tmp/dist/9router-*.tgz -C /tmp/rel --strip-components=1
+          tar -xzf /tmp/dist/9router-[0-9]*.tgz -C /tmp/rel --strip-components=1
           echo "--- extracted tree (top 2 levels) ---"
           ls -la /tmp/rel
           # Sanity: refuse to publish a broken module
