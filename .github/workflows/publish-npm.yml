@@ -1,15 +1,14 @@
-name: Build release branch
+name: Publish to npm
 
 # On every version tag (v*), build the installable CLI module and publish it
-# to the `release` branch, so users can install without any build tools:
+# to npm as `@purujawa06-bot/9router`, so users can install without any
+# build tools:
 #
-#   npm i -g github:purujawa06-bot/9router#release
+#   npm i -g @purujawa06-bot/9router
 #
-# Installing the source tree directly does NOT work: the root package
-# (9router-app) has no bin and ships the full dev tree, which breaks
-# extraction on Windows (TAR_ENTRY_ERROR on next/dist). The `release`
-# branch contains exactly the packed `9router` CLI module (cli.js + bin,
-# hooks, src, prebuilt app/) — the same content as the npm tarball.
+# NOTE: the npm name is scoped because unscoped `9router` is owned by
+# upstream (decolua). The tarball of a scoped package is
+# `<scope>-<name>-<version>.tgz`, i.e. purujawa06-bot-9router-*.tgz.
 
 on:
   push:
@@ -18,12 +17,12 @@ on:
   workflow_dispatch:
     inputs:
       dry_run:
-        description: "Build + pack only, do not push to the release branch"
+        description: "Build + pack only, do not publish to npm"
         type: boolean
         default: true
 
 permissions:
-  contents: write
+  contents: read
   id-token: write # npm provenance
 
 jobs:
@@ -80,6 +79,24 @@ jobs:
           npm pack --pack-destination /tmp/dist
           ls -la /tmp/dist
 
+      - name: Verify packed module
+        run: |
+          rm -rf /tmp/rel && mkdir -p /tmp/rel
+          ls -la /tmp/dist
+          # Guard: refuse a root-package tarball (9router-app-*) — only the
+          # CLI module (purujawa06-bot-9router-X.Y.Z.tgz) may be published.
+          if ls /tmp/dist/9router-app-*.tgz >/dev/null 2>&1; then
+            echo "::error::Wrong tarball packed (root 9router-app instead of CLI module)"
+            exit 1
+          fi
+          tar -xzf /tmp/dist/purujawa06-bot-9router-[0-9]*.tgz -C /tmp/rel --strip-components=1
+          # Sanity: refuse to publish a broken module
+          test -f /tmp/rel/cli.js
+          test -f /tmp/rel/package.json
+          ls /tmp/rel/app
+          test -f /tmp/rel/app/custom-server.js || test -f /tmp/rel/app/server.js
+          node -p "const p=require('/tmp/rel/package.json'); if(p.name!=='@purujawa06-bot/9router'||!p.bin?.['9router']) throw new Error('bad package'); p.version"
+
       - name: Publish to npm
         if: ${{ inputs.dry_run != true }}
         working-directory: cli
@@ -87,42 +104,4 @@ jobs:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           ls -la /tmp/dist
-          npm publish /tmp/dist/9router-*.tgz --provenance --access public
-
-      - name: Publish to release branch
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          set -x
-          rm -rf /tmp/rel && mkdir -p /tmp/rel
-          echo "--- tarballs ---"
-          ls -la /tmp/dist
-          # Guard: refuse a root-package tarball (9router-app-*) — only the
-          # CLI module (9router-X.Y.Z.tgz) may be published.
-          if ls /tmp/dist/9router-app-*.tgz >/dev/null 2>&1; then
-            echo "::error::Wrong tarball packed (root 9router-app instead of CLI module)"
-            exit 1
-          fi
-          echo "--- extract ---"
-          tar -xzf /tmp/dist/9router-[0-9]*.tgz -C /tmp/rel --strip-components=1
-          echo "--- extracted tree (top 2 levels) ---"
-          ls -la /tmp/rel
-          # Sanity: refuse to publish a broken module
-          test -f /tmp/rel/cli.js
-          test -f /tmp/rel/package.json
-          ls /tmp/rel/app
-          test -f /tmp/rel/app/custom-server.js || test -f /tmp/rel/app/server.js
-          node -p "const p=require('/tmp/rel/package.json'); if(p.name!=='9router'||!p.bin?.['9router']) throw new Error('bad package'); p.version"
-          cp CHANGELOG.md /tmp/rel/CHANGELOG.md
-          if [ "${{ inputs.dry_run }}" = "true" ]; then
-            echo "DRY RUN — build + sanity checks passed, skipping push to release branch"
-            exit 0
-          fi
-          cd /tmp/rel
-          git init -b release
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add -A
-          git commit -m "release ${{ github.ref_name }}"
-          git remote add origin "https://x-access-token:${GITHUB_TOKEN}@github.com/${{ github.repository }}.git"
-          git push -f origin release
+          npm publish /tmp/dist/purujawa06-bot-9router-*.tgz --provenance --access public

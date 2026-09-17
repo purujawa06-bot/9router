@@ -1,5 +1,5 @@
 {
-  "name": "9router",
+  "name": "@purujawa06-bot/9router",
   "version": "1.0.0",
   "description": "9Router CLI - Start and manage 9Router server",
   "bin": {

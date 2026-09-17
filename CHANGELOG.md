@@ -2,7 +2,7 @@
 
 ## Features
 - **Update notification**: follows fork tags — if the newest `v*` tag is newer than the running version, dashboard + CLI offer an update (`/api/version`, CLI startup check)
-- **Release branch**: CI rebuilds the packed CLI module into the `release` branch on every `v*` tag; install via `npm i -g github:purujawa06-bot/9router#release`
+- **npm release**: CI builds the packed CLI module on every `v*` tag and publishes it to npm; install via `npm i -g @purujawa06-bot/9router`
 - **Streaming**: treat empty SSE/JSON responses (DONE without content or tool calls) as failures so account/combo fallback triggers
 
 # v0.5.75 (2026-09-10)
