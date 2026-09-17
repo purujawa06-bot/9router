@@ -1,0 +1,83 @@
+name: Build release branch
+
+# On every version tag (v*), build the installable CLI module and publish it
+# to the `release` branch, so users can install without any build tools:
+#
+#   npm i -g github:purujawa06-bot/9router#release
+#
+# Installing the source tree directly does NOT work: the root package
+# (9router-app) has no bin and ships the full dev tree, which breaks
+# extraction on Windows (TAR_ENTRY_ERROR on next/dist). The `release`
+# branch contains exactly the packed `9router` CLI module (cli.js + bin,
+# hooks, src, prebuilt app/) — the same content as the npm tarball.
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install root deps
+        run: npm ci --no-audit --no-fund
+
+      - name: Install CLI build deps
+        run: npm install --prefix cli --no-audit --no-fund
+
+      - name: Build CLI module
+        run: npm run --prefix cli build
+        env:
+          NEXT_PUBLIC_BASE_URL: http://localhost:20128
+
+      - name: Verify tag matches CLI version
+        run: |
+          if [[ "${{ github.ref_name }}" == v* ]]; then
+            TAG_VER="${{ github.ref_name }}"
+            TAG_VER="${TAG_VER#v}"
+            PKG_VER=$(node -p "require('./cli/package.json').version")
+            if [ "$TAG_VER" != "$PKG_VER" ]; then
+              echo "::error::Tag v$TAG_VER does not match cli/package.json version $PKG_VER. Bump the version first."
+              exit 1
+            fi
+          fi
+
+      - name: Pack CLI module
+        run: |
+          mkdir -p /tmp/dist
+          npm --prefix cli pack --pack-destination /tmp/dist
+          ls -la /tmp/dist
+
+      - name: Publish to release branch
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          rm -rf /tmp/rel && mkdir -p /tmp/rel
+          tar -xzf /tmp/dist/9router-*.tgz -C /tmp/rel --strip-components=1
+          # Sanity: refuse to publish a broken module
+          test -f /tmp/rel/cli.js
+          test -f /tmp/rel/package.json
+          test -f /tmp/rel/app/custom-server.js || test -f /tmp/rel/app/server.js
+          node -p "const p=require('/tmp/rel/package.json'); if(p.name!=='9router'||!p.bin?.['9router']) throw new Error('bad package'); p.version"
+          cp CHANGELOG.md /tmp/rel/CHANGELOG.md
+          cd /tmp/rel
+          git init -b release
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "release ${{ github.ref_name }}"
+          git remote add origin "https://x-access-token:${GITHUB_TOKEN}@github.com/${{ github.repository }}.git"
+          git push -f origin release

@@ -1,24 +1,46 @@
 import https from "https";
 import pkg from "../../../../package.json" with { type: "json" };
 
-const NPM_PACKAGE_NAME = "9router";
-const VERSION_CACHE_TTL_MS = 3600000; // cache npm latest lookup for 1h
+// Update source follows the purujawa06-bot fork (not upstream npm).
+// Notification is tag-driven: if the newest v* tag on the fork is newer
+// than the running version, an update is available.
+// Override with UPDATE_CHECK_REPO=owner/repo if needed.
+const UPDATE_CHECK_REPO = process.env.UPDATE_CHECK_REPO || "purujawa06-bot/9router";
+const VERSION_CACHE_TTL_MS = 3600000; // cache tags lookup for 1h
 
 // Survive hot reload; one cache per process
-const versionCache = (global.__npmVersionCache ??= { value: null, fetchedAt: 0 });
+const versionCache = (global.__forkVersionCache ??= { value: null, fetchedAt: 0 });
 
-// Fetch latest version from npm registry
+// Pick the newest x.y.z from a GitHub tags list (tag names like "v0.5.76").
+export function pickLatestTagVersion(tags) {
+  let latest = null;
+  for (const t of tags || []) {
+    const m = /^v?(\d+)\.(\d+)\.(\d+)$/.exec(t?.name || "");
+    if (!m) continue;
+    const v = `${m[1]}.${m[2]}.${m[3]}`;
+    if (!latest || compareVersions(v, latest) > 0) latest = v;
+  }
+  return latest;
+}
+
+// Fetch newest release tag from the fork
 function fetchLatestVersion() {
   return new Promise((resolve) => {
     const req = https.get(
-      `https://registry.npmjs.org/${NPM_PACKAGE_NAME}/latest`,
-      { timeout: 4000 },
+      `https://api.github.com/repos/${UPDATE_CHECK_REPO}/tags?per_page=100`,
+      {
+        timeout: 8000,
+        headers: {
+          "User-Agent": "9router-update-check",
+          Accept: "application/vnd.github+json",
+        },
+      },
       (res) => {
         let data = "";
         res.on("data", (chunk) => (data += chunk));
         res.on("end", () => {
           try {
-            resolve(JSON.parse(data).version || null);
+            resolve(pickLatestTagVersion(JSON.parse(data)));
           } catch {
             resolve(null);
           }

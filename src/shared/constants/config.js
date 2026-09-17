@@ -7,17 +7,22 @@ export const APP_CONFIG = {
   version: pkg.version,
 };
 
-// GitHub configuration
+// GitHub configuration (follows the purujawa06-bot fork)
 export const GITHUB_CONFIG = {
-  changelogUrl: "https://raw.githubusercontent.com/decolua/9router/refs/heads/master/CHANGELOG.md",
+  changelogUrl: "https://raw.githubusercontent.com/purujawa06-bot/9router/refs/heads/master/CHANGELOG.md",
   donateUrl: "https://9router.com/api/donate",
 };
 
-// Updater configuration
+// Updater configuration (follows the purujawa06-bot fork).
+// Installs come from the `release` branch, which CI rebuilds from the
+// packed CLI module on every v* tag (installing the source tree directly
+// does not work: no bin + dev tree breaks Windows extraction).
 export const UPDATER_CONFIG = {
-  npmPackageName: "9router",
-  installCmd: "npm i -g 9router",
-  installCmdLatest: "npm i -g 9router@latest --prefer-online",
+  updateRepo: "purujawa06-bot/9router",
+  npmPackageName: "github:purujawa06-bot/9router#release",
+  binName: "9router",
+  installCmd: "npm i -g github:purujawa06-bot/9router#release",
+  installCmdLatest: "npm i -g github:purujawa06-bot/9router#release --prefer-online",
   shutdownCountdownSec: 3,
   exitDelayMs: 500,
   statusPort: 20129,

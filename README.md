@@ -1,7 +1,8 @@
 > 🍴 Fork dari [decolua/9router](https://github.com/decolua/9router).
 > Fork ini menerapkan fix/patch komunitas upstream yang belum di-merge: perbaikan provider, update katalog model, fix OAuth/token refresh, dan perbaikan translator/fallback.
 >
-> Install: `ghcr.io/purujawa06-bot/9router:latest` atau `npm install -g github:purujawa06-bot/9router`.
+> Install: `ghcr.io/purujawa06-bot/9router:latest` atau `npm install -g github:purujawa06-bot/9router#release`.
+> Branch `release` di-build otomatis oleh CI dari modul CLI setiap push tag `v*` (install dari source tree tidak didukung).
 
 <div align="center">
   <img src="./images/9router.png?1" alt="9Router Dashboard" width="800"/>

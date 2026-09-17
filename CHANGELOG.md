@@ -1,3 +1,10 @@
+# v1.0.0 (fork purujawa06-bot)
+
+## Features
+- **Update notification**: follows fork tags — if the newest `v*` tag is newer than the running version, dashboard + CLI offer an update (`/api/version`, CLI startup check)
+- **Release branch**: CI rebuilds the packed CLI module into the `release` branch on every `v*` tag; install via `npm i -g github:purujawa06-bot/9router#release`
+- **Streaming**: treat empty SSE/JSON responses (DONE without content or tool calls) as failures so account/combo fallback triggers
+
 # v0.5.75 (2026-09-10)
 
 ## Features

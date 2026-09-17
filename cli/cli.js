@@ -455,6 +455,24 @@ function isRestrictedEnvironment() {
   return null;
 }
 
+// Update check follows the purujawa06-bot fork's git tags
+// (the npm `9router` package is published from upstream decolua).
+// If the newest v* tag is newer than this install, an update is offered.
+// Override with UPDATE_CHECK_REPO=owner/repo if needed.
+const UPDATE_CHECK_REPO = process.env.UPDATE_CHECK_REPO || "purujawa06-bot/9router";
+
+// Pick the newest x.y.z from a GitHub tags list (tag names like "v0.5.76").
+function pickLatestTagVersion(tags) {
+  let latest = null;
+  for (const t of tags || []) {
+    const m = /^v?(\d+)\.(\d+)\.(\d+)$/.exec((t && t.name) || "");
+    if (!m) continue;
+    const v = `${m[1]}.${m[2]}.${m[3]}`;
+    if (!latest || compareVersions(v, latest) > 0) latest = v;
+  }
+  return latest;
+}
+
 // Check if new version available, return latest version or null
 function checkForUpdate() {
   return new Promise((resolve) => {
@@ -482,14 +500,20 @@ function checkForUpdate() {
       resolve(version);
     };
 
-    const req = https.get(`https://registry.npmjs.org/${pkg.name}/latest`, { timeout: 3000 }, (res) => {
+    const req = https.get(`https://api.github.com/repos/${UPDATE_CHECK_REPO}/tags?per_page=100`, {
+      timeout: 5000,
+      headers: {
+        "User-Agent": "9router-update-check",
+        Accept: "application/vnd.github+json",
+      },
+    }, (res) => {
       let data = "";
       res.on("data", chunk => data += chunk);
       res.on("end", () => {
         try {
-          const latest = JSON.parse(data);
-          if (latest.version && compareVersions(latest.version, pkg.version) > 0) {
-            done(latest.version);
+          const latest = pickLatestTagVersion(JSON.parse(data));
+          if (latest && compareVersions(latest, pkg.version) > 0) {
+            done(latest);
           } else {
             done(null);
           }
