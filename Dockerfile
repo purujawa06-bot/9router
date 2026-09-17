@@ -16,11 +16,13 @@ FROM base AS builder
 # NOTE: package-lock.json is gitignored in this repo, so only package.json is
 # copied. If a lockfile is committed later, add it to the COPY for `npm ci`.
 COPY package.json ./
-# Full install (devDeps needed for `next build`). better-sqlite3 is optional:
-# its prebuilt musl binary is fetched, no python3/make/g++ needed. If the
-# prebuilt is ever missing the optional install fails open and sql.js is used.
+# Full install (devDeps needed for `next build`). better-sqlite3 is skipped on
+# purpose (--omit=optional): it is an optionalDependency with a fail-open
+# fallback chain (node:sqlite builtin on Node 22 → sql.js), and its
+# prebuild-download / node-gyp fallback is extremely slow under QEMU
+# emulation on linux/arm64 builds (hours). sql.js stays (regular dep).
 RUN --mount=type=cache,target=/root/.npm \
-  npm install --no-audit --no-fund
+  npm install --omit=optional --no-audit --no-fund
 
 COPY . ./
 ENV NEXT_TELEMETRY_DISABLED=1
@@ -36,10 +38,12 @@ ENV HOSTNAME=0.0.0.0
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV DATA_DIR=/app/data
 
-# Slim runtime: production deps only (no devDeps, no build tools).
+# Slim runtime: production deps only (no devDeps, no build tools, and no
+# optional native deps — better-sqlite3 is skipped, the server falls back
+# to the Node 22 builtin node:sqlite / bundled sql.js; see builder note).
 COPY package.json ./
 RUN --mount=type=cache,target=/root/.npm \
-  npm install --omit=dev --no-audit --no-fund
+  npm install --omit=dev --omit=optional --no-audit --no-fund
 
 COPY --from=builder /app/public ./public
 COPY --from=builder /app/.next/static ./.next/static
