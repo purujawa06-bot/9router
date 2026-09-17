@@ -14,15 +14,14 @@ export const GITHUB_CONFIG = {
 };
 
 // Updater configuration (follows the purujawa06-bot fork).
-// Installs come from the `release` branch, which CI rebuilds from the
-// packed CLI module on every v* tag (installing the source tree directly
-// does not work: no bin + dev tree breaks Windows extraction).
+// Installs come from npm — CI publishes the packed CLI module as
+// `@purujawa06-bot/9router` on every v* tag.
 export const UPDATER_CONFIG = {
   updateRepo: "purujawa06-bot/9router",
-  npmPackageName: "github:purujawa06-bot/9router#release",
+  npmPackageName: "@purujawa06-bot/9router",
   binName: "9router",
-  installCmd: "npm i -g github:purujawa06-bot/9router#release",
-  installCmdLatest: "npm i -g github:purujawa06-bot/9router#release --prefer-online",
+  installCmd: "npm i -g @purujawa06-bot/9router",
+  installCmdLatest: "npm i -g @purujawa06-bot/9router@latest",
   shutdownCountdownSec: 3,
   exitDelayMs: 500,
   statusPort: 20129,
