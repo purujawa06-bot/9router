@@ -38,14 +38,10 @@ jobs:
       - name: Install CLI build deps
         run: npm install --prefix cli --no-audit --no-fund
 
-      - name: Build CLI module
-        run: npm run --prefix cli build
-        env:
-          NEXT_PUBLIC_BASE_URL: http://localhost:20128
-
       - name: Sync version from tag
         # Tags are the single source of truth — no manual package.json bump
-        # needed. The release module is stamped with the tag version.
+        # needed. MUST run before the build so the module is stamped with
+        # the tag version.
         run: |
           REF="${{ github.ref_name }}"
           if [[ "$REF" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
@@ -63,6 +59,11 @@ jobs:
             echo "Not a version tag ($REF) — keeping package.json versions"
           fi
 
+      - name: Build CLI module
+        run: npm run --prefix cli build
+        env:
+          NEXT_PUBLIC_BASE_URL: http://localhost:20128
+
       - name: Pack CLI module
         run: |
           mkdir -p /tmp/dist
@@ -73,11 +74,18 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          set -x
           rm -rf /tmp/rel && mkdir -p /tmp/rel
+          echo "--- tarballs ---"
+          ls -la /tmp/dist
+          echo "--- extract ---"
           tar -xzf /tmp/dist/9router-*.tgz -C /tmp/rel --strip-components=1
+          echo "--- extracted tree (top 2 levels) ---"
+          ls -la /tmp/rel
           # Sanity: refuse to publish a broken module
           test -f /tmp/rel/cli.js
           test -f /tmp/rel/package.json
+          ls /tmp/rel/app
           test -f /tmp/rel/app/custom-server.js || test -f /tmp/rel/app/server.js
           node -p "const p=require('/tmp/rel/package.json'); if(p.name!=='9router'||!p.bin?.['9router']) throw new Error('bad package'); p.version"
           cp CHANGELOG.md /tmp/rel/CHANGELOG.md
