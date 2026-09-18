@@ -165,8 +165,11 @@ Commands:
   }
 }
 
-// Auto-relaunch after update: detached process has no TTY → fallback to tray
-if (skipUpdate && !trayMode && !process.stdin.isTTY) {
+// No interactive stdin (detached, piped, service, auto-relaunch after update)
+// → tray mode so the server stays alive. Without this the TUI menu
+// (selectMenu) instantly resolves to -1/"exit" and the CLI quits right
+// after boot.
+if (!trayMode && !process.stdin.isTTY) {
   trayMode = true;
   process.env.TRAY_MODE = "1";
 }
