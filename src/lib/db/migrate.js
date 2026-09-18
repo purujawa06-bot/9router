@@ -278,7 +278,7 @@ export async function runMigrationOnce(adapter) {
     } catch (err) {
       if (err instanceof MigrationAborted) {
         console.error(`[DB][migrate] aborted: ${err.message} | legacy JSON kept | backup: ${backupDir}`);
-        return;
+        return { fresh };
       }
       throw err;
     }
@@ -286,7 +286,7 @@ export async function runMigrationOnce(adapter) {
     try { fs.writeFileSync(MIGRATED_MARKER, new Date().toISOString()); } catch {}
     pruneOldBackups();
     console.log(`[DB][migrate] JSON → SQLite in ${Date.now() - t0}ms | legacy JSON kept at DATA_DIR | backup: ${backupDir}`);
-    return;
+    return { fresh };
   }
 
   // Track app version for informational purposes only. App version bumps no
@@ -294,4 +294,8 @@ export async function runMigrationOnce(adapter) {
   const newVer = getAppVersion();
   const oldVer = getMetaSync(adapter, "appVersion", null);
   if (oldVer !== newVer) setMetaSync(adapter, "appVersion", newVer);
+
+  // `fresh` = DB file had no _meta rows on entry (brand-new / wiped volume).
+  // Returned for consumers like the optional RTDB sync (restore-on-boot).
+  return { fresh };
 }

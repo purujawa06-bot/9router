@@ -41,6 +41,22 @@ through a single OpenAI-compatible endpoint (`/v1/*`).
 - **OAuth + API key + FREE providers** — Claude Code, Codex, Copilot, Kiro, OpenCode Free, Vertex, GLM, MiniMax, OpenRouter, 40+ more
 - **Web dashboard** — providers, combos, usage analytics, cloud sync
 - **CLI with auto-update** — update notifications powered by npm, one command to upgrade
+- **VPS auto-backup (RTDB sync)** — optional Firebase Realtime Database mirror, so VPS data survives restarts/wipes ([docs](#vps-auto-backup-rtdb-sync))
+
+### VPS auto-backup (RTDB sync)
+
+Fork-exclusive: set one env var and the whole SQLite database is mirrored to Firebase RTDB as JSON — restored automatically on boot if the local DB is empty, pushed after every change (debounced), best-effort on shutdown. Unset = upstream behavior.
+
+```bash
+PUBLIC_RTDB=https://xxx-default-rtdb.firebaseio.com
+# optional: RTDB_PATH=9router RTDB_AUTH=<secret> RTDB_DEBOUNCE_MS=30000
+```
+
+Rules must allow read/write on your path (lock it down in production):
+
+```json
+{ "rules": { "9router": { ".read": true, ".write": true } } }
+```
 
 Full feature documentation lives upstream: [decolua/9router](https://github.com/decolua/9router).
 

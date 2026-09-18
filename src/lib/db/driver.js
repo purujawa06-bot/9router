@@ -73,8 +73,11 @@ async function initAdapter() {
   }
 
   const { runMigrationOnce } = await import("./migrate.js");
-  await runMigrationOnce(adapter);
-  return adapter;
+  const { fresh = false } = (await runMigrationOnce(adapter)) || {};
+
+  // Optional RTDB sync (fork feature): no-op unless RTDB_URL/PUBLIC_RTDB is set.
+  const { rtdbOnAdapterReady } = await import("./rtdbSync.js");
+  return await rtdbOnAdapterReady(adapter, { fresh });
 }
 
 export async function getAdapter() {
