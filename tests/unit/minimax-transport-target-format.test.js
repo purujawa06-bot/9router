@@ -87,12 +87,6 @@ vi.mock("../../open-sse/rtk/index.js", () => ({
   compressMessages: vi.fn(() => null),
   formatRtkLog: vi.fn(() => ""),
 }));
-vi.mock("../../open-sse/rtk/headroom.js", () => ({
-  compressWithHeadroom: vi.fn(async () => null),
-  formatHeadroomLog: vi.fn(() => ""),
-  formatHeadroomSizeLog: vi.fn(() => ""),
-  isHeadroomPhantomSavings: vi.fn(() => false),
-}));
 vi.mock("../../open-sse/rtk/pxpipe.js", () => ({
   compressWithPxpipe: vi.fn(async () => ({ body: null, summary: null })),
 }));
