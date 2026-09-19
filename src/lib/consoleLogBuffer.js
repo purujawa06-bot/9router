@@ -42,7 +42,7 @@ function scheduleFlush() {
 }
 
 function toLogLine(level, args) {
-  return args.map(formatArg).join(" ");
+  return { level: level.toUpperCase(), line: args.map(formatArg).join(" "), ts: Date.now() };
 }
 
 // Strip ANSI escape codes so terminal colors don't bleed into UI
@@ -62,13 +62,13 @@ function formatArg(arg) {
   }
 }
 
-function appendLine(line) {
-  state.logs.push(line);
+function appendLine(entry) {
+  state.logs.push(entry);
   const maxLines = CONSOLE_LOG_CONFIG.maxLines;
   if (state.logs.length > maxLines) {
     state.logs = state.logs.slice(-maxLines);
   }
-  state.pendingLines.push(line);
+  state.pendingLines.push(entry);
   if (state.pendingLines.length >= MAX_BATCH_LINES) {
     if (state.flushTimer) {
       clearTimeout(state.flushTimer);
