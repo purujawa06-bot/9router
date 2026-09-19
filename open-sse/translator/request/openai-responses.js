@@ -37,6 +37,12 @@ export function openaiResponsesToOpenAIRequest(model, body, stream, credentials)
   let pendingReasoningEncrypted = "";
   const additionalTools = [];
   const customToolNames = new Set();
+  // Per-request tool-name maps: sanitized name -> original name, and sub-tool -> namespace.
+  // Attached to the translated body (`_toolNameMap` is the existing convention chatCore
+  // already lifts into stream state) so the response side resolves names without any
+  // cross-request state. The globalThis mirrors below are legacy fallbacks.
+  const toolNameMap = new Map();
+  const nsToolNames = new Map();
 
   const inputItems = normalizeResponsesInput(body.input);
   if (!inputItems) return body;
@@ -192,6 +198,7 @@ export function openaiResponsesToOpenAIRequest(model, body, stream, credentials)
           const fn = tool.function;
           if (fn?.name && fn.name.includes(".")) {
             const safe = fn.name.replace(/\./g, "__");
+            toolNameMap.set(safe, fn.name);
             globalThis.__CB_TOOL_MAP__ ||= {};
             globalThis.__CB_TOOL_MAP__[safe] = fn.name;
             return { ...tool, function: { ...fn, name: safe } };
@@ -210,6 +217,7 @@ export function openaiResponsesToOpenAIRequest(model, body, stream, credentials)
               // Keep a flat-name -> namespace map so the response side can route a
               // tool call that arrives by flat name (wait_agent, not collaboration.wait_agent).
               if (ns) {
+                nsToolNames.set(sub.name, ns);
                 globalThis.__CB_NS_TOOLS__ ||= {};
                 globalThis.__CB_NS_TOOLS__[sub.name] = ns;
               }
@@ -219,6 +227,7 @@ export function openaiResponsesToOpenAIRequest(model, body, stream, credentials)
               const full = ns ? `${ns}.${sub.name}` : sub.name;
               const safe = full.includes(".") ? full.replace(/\./g, "__") : full;
               if (full !== safe) {
+                toolNameMap.set(safe, full);
                 globalThis.__CB_TOOL_MAP__ ||= {};
                 globalThis.__CB_TOOL_MAP__[safe] = full;
               }
@@ -243,6 +252,7 @@ export function openaiResponsesToOpenAIRequest(model, body, stream, credentials)
         // name and keep the map so the response side restores the original.
         const safeName = name.includes(".") ? name.replace(/\./g, "__") : name;
         if (safeName !== name) {
+          toolNameMap.set(safeName, name);
           globalThis.__CB_TOOL_MAP__ ||= {};
           globalThis.__CB_TOOL_MAP__[safeName] = name;
         }
@@ -283,6 +293,13 @@ export function openaiResponsesToOpenAIRequest(model, body, stream, credentials)
       .filter(Boolean);
   }
   if (customToolNames.size > 0) result._customToolNames = [...customToolNames];
+
+  // Hand the response side this request's own name maps (chatCore lifts `_toolNameMap` into
+  // stream state). The legacy globalThis mirrors below are REPLACED per request — never
+  // accumulated — so they cannot grow unbounded or leak names into another request.
+  if (toolNameMap.size > 0) result._toolNameMap = toolNameMap;
+  globalThis.__CB_TOOL_MAP__ = toolNameMap.size > 0 ? Object.fromEntries(toolNameMap) : null;
+  globalThis.__CB_NS_TOOLS__ = nsToolNames.size > 0 ? Object.fromEntries(nsToolNames) : null;
 
   // Cleanup Responses API specific fields
   // Map Responses-only max_output_tokens to Chat max_tokens (avoid leaking unknown field upstream)
