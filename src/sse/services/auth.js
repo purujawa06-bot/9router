@@ -264,6 +264,21 @@ export async function markAccountUnavailable(connectionId, status, errorText, pr
   if (!shouldFallback) return { shouldFallback: false, cooldownMs: 0 };
 
   const reason = typeof errorText === "string" ? errorText.slice(0, 200) : "Provider error";
+  const connName = conn?.displayName || conn?.name || conn?.email || connectionId.slice(0, 8);
+
+  // Always print the upstream error, even when we fall back without locking —
+  // a fallback attempt must never silence the cause.
+  if (provider && status && reason) {
+    console.error(`❌ ${provider} [${status}]: ${reason}`);
+  }
+
+  if (cooldownMs <= 0) {
+    // Fallback without lock (e.g. request-shaped 400): try the next account
+    // but leave this one in rotation — no modelLock_*, no testStatus change.
+    log.warn("AUTH", `${connName} [${status}] error without lock → trying next account | ${reason}`);
+    return { shouldFallback: true, cooldownMs: 0 };
+  }
+
   const lockUpdate = buildModelLockUpdate(githubResetAtMs ? null : model, cooldownMs);
 
   await updateProviderConnection(connectionId, {
@@ -276,12 +291,7 @@ export async function markAccountUnavailable(connectionId, status, errorText, pr
   });
 
   const lockKey = Object.keys(lockUpdate)[0];
-  const connName = conn?.displayName || conn?.name || conn?.email || connectionId.slice(0, 8);
   log.warn("AUTH", `${connName} locked ${lockKey} for ${Math.round(cooldownMs / 1000)}s [${status}]`);
-
-  if (provider && status && reason) {
-    console.error(`❌ ${provider} [${status}]: ${reason}`);
-  }
 
   return { shouldFallback: true, cooldownMs };
 }

@@ -45,16 +45,27 @@ export function checkFallbackError(status, errorText, backoffLevel = 0) {
     }
   }
 
-  // Request-scoped client errors that matched no rule above: a 400 caused by the
-  // request itself (context overflow, malformed body, unsupported parameter) says
-  // nothing about the credential, so cooling the account down only removes a
-  // healthy connection from rotation. With a single connection it is worse: every
-  // later request in the window fails with a copy of this very error
-  // ("all 1 accounts locked for <model> | lastError=[400]: ..."), which hides the
-  // real cause from the caller and makes unrelated sessions look like they hit the
-  // same limit. Hand the upstream error back for this request instead.
-  // Account-scoped statuses keep their rules above (401/402/403/404/429), and the
-  // text rules still win for rate-limit / quota / capacity wording.
+  // Status 400: the failure may be request-scoped (malformed body, context
+  // overflow) OR account/session-scoped (pooled free-tier gates,
+  // "encrypted_content was not issued to this caller"). Give the next
+  // account/model a chance, but do NOT cool the failed account down
+  // (cooldownMs 0 = no lock): a request-shaped 400 says nothing about the
+  // credential, and locking would remove a healthy connection from rotation —
+  // with a single connection every later request in the window would then fail
+  // with a copy of this very error ("all 1 accounts locked for <model> |
+  // lastError=[400]: ..."), hiding the real cause. Text rules above
+  // (rate-limit / quota / capacity wording) still win with backoff.
+  // Callers must still print the error — a fallback attempt never silences it.
+  if (status === 400) {
+    return { shouldFallback: true, cooldownMs: 0 };
+  }
+
+  // Other request-scoped client errors that matched no rule above: a 422/413
+  // caused by the request itself says nothing about the credential, so cooling
+  // the account down only removes a healthy connection from rotation. Hand the
+  // upstream error back for this request instead. Account-scoped statuses keep
+  // their rules above (401/402/403/404/429), and the text rules still win for
+  // rate-limit / quota / capacity wording.
   if (status >= 400 && status < 500 && status !== 401 && status !== 402 && status !== 403 && status !== 429) {
     return { shouldFallback: false, cooldownMs: 0 };
   }

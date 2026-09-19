@@ -1,13 +1,13 @@
-// Regression: an unmatched 4xx (a request-scoped failure) used to hit the
-// transient-cooldown default, which locked the account for 30s and — with a
-// single connection — answered every other request in that window with a copy of
-// the first error. A 400 "maximum context length" from one session therefore
-// looked like the same failure in unrelated sessions.
+// A 400 may be request-scoped (context overflow) OR account/session-scoped
+// (pooled free-tier gates, encrypted_content issued to another caller), so it
+// tries the next account/model — but with cooldownMs 0 (no lock): the failed
+// account stays in rotation, so a single connection never answers later
+// requests with a copy of this error ("all 1 accounts locked ...").
 import { describe, expect, it } from "vitest";
 import { checkFallbackError } from "../../open-sse/services/accountFallback.js";
 
 describe("checkFallbackError — request-scoped vs account-scoped failures", () => {
-  it("does not cool the account down for a 400 caused by the request", () => {
+  it("falls back WITHOUT locking the account for a 400", () => {
     const result = checkFallbackError(400, JSON.stringify({
       error: {
         message: "This model's maximum context length is 1048576 tokens. However, you requested 1186139 tokens",
@@ -15,7 +15,7 @@ describe("checkFallbackError — request-scoped vs account-scoped failures", () 
       },
     }));
 
-    expect(result).toEqual({ shouldFallback: false, cooldownMs: 0 });
+    expect(result).toEqual({ shouldFallback: true, cooldownMs: 0 });
   });
 
   it("still falls back for account-scoped statuses", () => {
