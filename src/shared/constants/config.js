@@ -10,7 +10,6 @@ export const APP_CONFIG = {
 // GitHub configuration (follows the purujawa06-bot fork)
 export const GITHUB_CONFIG = {
   changelogUrl: "https://raw.githubusercontent.com/purujawa06-bot/9router/refs/heads/master/CHANGELOG.md",
-  donateUrl: "https://9router.com/api/donate",
 };
 
 // Updater configuration (follows the purujawa06-bot fork).
