@@ -57,7 +57,7 @@ export function stripContinuityFields(body) {
   return body;
 }
 
-export async function handleChatCore({ body, modelInfo, credentials, log, onCredentialsRefreshed, onRequestSuccess, onDisconnect, clientRawRequest, connectionId, userAgent, apiKey, ccFilterNaming, rtkEnabled, cavemanEnabled, cavemanLevel, ponytailEnabled, ponytailLevel, pxpipeEnabled, pxpipeMinChars, pxpipeTimeoutMs, pxpipeTransform, onPxpipeEvent, sourceFormatOverride, providerThinking }) {
+export async function handleChatCore({ body, modelInfo, credentials, log, onCredentialsRefreshed, onRequestSuccess, onDisconnect, clientRawRequest, connectionId, userAgent, apiKey, ccFilterNaming, rtkEnabled, cavemanEnabled, cavemanLevel, ponytailEnabled, ponytailLevel, noMediaEnabled, pxpipeEnabled, pxpipeMinChars, pxpipeTimeoutMs, pxpipeTransform, onPxpipeEvent, sourceFormatOverride, providerThinking }) {
   const { provider, model } = modelInfo;
   const requestStartTime = Date.now();
   // Stable per-session color so all lines of one CLI conversation share a tag
@@ -154,9 +154,15 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   if (credentials) credentials.rawHeaders = clientRawRequest?.headers || {};
 
   // Auto-strip media blocks the model can't read (vision/audio/pdf) before translation.
+  // Token Saver → No media: drop ALL media/files for every provider, even when the
+  // model declares support (some free-tier upstreams answer media payloads with 400).
   if (!passthrough) {
     const caps = getCapabilitiesForModel(provider, model);
-    if (stripUnsupportedModalities(body, sourceFormat, caps)) {
+    if (noMediaEnabled) {
+      if (stripUnsupportedModalities(body, sourceFormat, caps, { noMedia: true })) {
+        log?.debug?.("MODALITY", `no-media mode: stripped media for ${provider}/${model}`);
+      }
+    } else if (stripUnsupportedModalities(body, sourceFormat, caps)) {
       log?.debug?.("MODALITY", `stripped unsupported media for ${provider}/${model}`);
     }
     // Convert remote image URLs to base64 for targets that can't fetch URLs.

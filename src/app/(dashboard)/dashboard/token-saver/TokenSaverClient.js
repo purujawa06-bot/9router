@@ -15,6 +15,7 @@ export default function TokenSaverClient() {
   const [cavemanLevel, setCavemanLevel] = useState("full");
   const [ponytailEnabled, setPonytailEnabled] = useState(false);
   const [ponytailLevel, setPonytailLevel] = useState("full");
+  const [noMediaEnabled, setNoMediaEnabled] = useState(false);
   const [pxpipeEnabled, setPxpipeEnabled] = useState(false);
   const [pxpipeMinChars, setPxpipeMinChars] = useState(25000);
   const [pxpipeStatus, setPxpipeStatus] = useState({
@@ -93,6 +94,11 @@ export default function TokenSaverClient() {
     patchSetting({ ponytailLevel: level });
   };
 
+  const handleNoMediaEnabled = (value) => {
+    setNoMediaEnabled(value);
+    patchSetting({ noMediaEnabled: value });
+  };
+
   const refreshPxpipeStatus = useCallback(async () => {
     setPxpipeStatus((s) => ({ ...s, loading: true }));
     try {
@@ -157,6 +163,7 @@ export default function TokenSaverClient() {
           setCavemanLevel(data.cavemanLevel || "full");
           setPonytailEnabled(!!data.ponytailEnabled);
           setPonytailLevel(data.ponytailLevel || "full");
+          setNoMediaEnabled(!!data.noMediaEnabled);
           setPxpipeEnabled(!!data.pxpipeEnabled);
           if (typeof data.pxpipeMinChars === "number") setPxpipeMinChars(data.pxpipeMinChars);
           // PRD: run the PXPIPE health check automatically when the page opens
@@ -317,6 +324,19 @@ export default function TokenSaverClient() {
               onChange={() => handlePonytailEnabled(!ponytailEnabled)}
             />
           </div>
+        </div>
+        <div className="flex items-center justify-between pt-4 mt-4 border-t border-border gap-4 flex-wrap">
+          <div className="min-w-0 flex-1">
+            <p className="font-medium">No media</p>
+            <p className="text-sm text-text-muted">
+              Remove images, audio, video &amp; files from requests before
+              sending upstream — applies to all providers
+            </p>
+          </div>
+          <Toggle
+            checked={noMediaEnabled}
+            onChange={() => handleNoMediaEnabled(!noMediaEnabled)}
+          />
         </div>
         {/* PXPIPE hidden from UI — experimental, not exposed to users yet */}
         {false && (
