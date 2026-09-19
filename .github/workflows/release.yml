@@ -296,7 +296,10 @@ jobs:
 
   docker-merge:
     runs-on: ubuntu-latest
-    needs: docker-build
+    # NOTE: `release` must be a direct need — otherwise
+    # `needs.release.outputs.tag` is empty here and the version tag below
+    # silently generates nothing (only `latest` gets pushed).
+    needs: [release, docker-build]
 
     steps:
       - name: Download digests
