@@ -73,6 +73,12 @@ export const ERROR_RULES = [
   { status: 403, cooldownMs: COOLDOWN.long },
   { status: 404, cooldownMs: COOLDOWN.long },
   { status: 429, backoff: true },
+  // 410 Gone = model/resource permanently gone upstream. Scope is ambiguous:
+  // retired model (same model fails on every account, but the NEXT combo
+  // model may work) OR per-account free-access revocation (next account may
+  // work). Either way it says nothing about the credential, so fall back
+  // with cooldownMs 0 (no lock) — like the 400 rule in accountFallback.js.
+  { status: 410, cooldownMs: 0 },
 ];
 
 // Backward compat: COOLDOWN_MS object (used by index.js re-export)

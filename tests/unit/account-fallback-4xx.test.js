@@ -18,6 +18,12 @@ describe("checkFallbackError — request-scoped vs account-scoped failures", () 
     expect(result).toEqual({ shouldFallback: true, cooldownMs: 0 });
   });
 
+  it("falls back WITHOUT locking the account for a 410 (model gone)", () => {
+    const result = checkFallbackError(410, "model has been retired");
+
+    expect(result).toEqual({ shouldFallback: true, cooldownMs: 0 });
+  });
+
   it("still falls back for account-scoped statuses", () => {
     for (const status of [401, 402, 403, 404, 429]) {
       expect(checkFallbackError(status, "nope").shouldFallback).toBe(true);
