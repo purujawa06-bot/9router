@@ -37,6 +37,9 @@ ENV NEXT_TELEMETRY_DISABLED=1
 RUN npm run build
 
 FROM base AS runner
+# Mirror swap also applied here: apk would otherwise hit
+# dl-cdn.alpinelinux.org and hang on networks that cannot reach it.
+RUN sed -i 's|dl-cdn.alpinelinux.org|mirrors.aliyun.com|g' /etc/apk/repositories
 
 LABEL org.opencontainers.image.title="9router"
 
