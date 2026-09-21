@@ -4,6 +4,7 @@
 - **Update notification**: follows fork tags — if the newest `v*` tag is newer than the running version, dashboard + CLI offer an update (`/api/version`, CLI startup check)
 - **npm release**: CI builds the packed CLI module on every `v*` tag and publishes it to npm; install via `npm i -g @rikipurpur/9router`
 - **Streaming**: treat empty SSE/JSON responses (DONE without content or tool calls) as failures so account/combo fallback triggers
+- **Qoder CN**: add the `qoder-cn` provider for qoder.com.cn — same device/OAuth flow and COSY-signed chat protocol as intl Qoder, served from the CN gateway, region derived from provider id across executor, catalog, quota, validation, and dashboard
 - **Xiaomi MiMo**: merge MiMo Desktop support into `xiaomi-mimo` with dual auth (API key + Desktop/OAuth session), Preview models support, and encrypted-callback OAuth flow
 - **Claude Code**: add 1M-context toggle (`[1m]` marker) and drive `CLAUDE_CODE_AUTO_COMPACT_WINDOW` directly from the dashboard
 - **Models**: add DeepSeek-V4.1-Flash to DeepSeek provider, CodeBuddy-Intl, and Ollama (`deepseek-v4.1-flash:cloud`); enable `low`..`max` reasoning effort levels and vision capability for DeepSeek-V4.*
