@@ -68,7 +68,7 @@ describe("token savers on Cursor (pre-translate RTK)", () => {
     });
   });
 
-  it("compresses role:tool git diffs before openai→cursor rewrite, then injects Headroom/Caveman/Ponytail", async () => {
+  it("compresses role:tool git diffs before openai→cursor rewrite, then injects Caveman/Ponytail", async () => {
     const diff = makeLongDiff();
     const log = { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), line: vi.fn() };
 
@@ -93,8 +93,6 @@ describe("token savers on Cursor (pre-translate RTK)", () => {
       log,
       connectionId: "test-conn",
       rtkEnabled: true,
-      headroomEnabled: true,
-      headroomUrl: "http://localhost:8787",
       cavemanEnabled: true,
       cavemanLevel: "full",
       ponytailEnabled: true,
@@ -116,11 +114,6 @@ describe("token savers on Cursor (pre-translate RTK)", () => {
     expect(blob).not.toContain("UNIQUE_PADDING_150");
     expect(blob).toContain("lazy senior developer");
     expect(blob).toMatch(/Respond like a caveman|drop filler|ACTIVE EVERY RESPONSE/i);
-
-    expect(global.fetch).toHaveBeenCalledWith(
-      "http://localhost:8787/v1/compress",
-      expect.any(Object)
-    );
 
     const xf = log.line.mock.calls.find((c) => c[1] === "⚙");
     expect(xf, "expected ⚙ saver log").toBeTruthy();
