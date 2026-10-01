@@ -23,15 +23,22 @@ const SPECIALIZED = new Set([
   "xiaomi-tokenplan", "mimo-free",
 ]);
 
-// Sanitize header: khử token + field thời gian động (kimi X-Msh-Device-Id) để snapshot ổn định.
+// Sanitize header: khử token + field động (thời gian, version, platform, hostname) để snapshot ổn định.
+// ponytail: version/platform/hostname dinormalisasi, hanya nilai kode (mis. grok-shell) yang di-lock.
 function sanitize(headers) {
   const out = {};
   for (const [k, v] of Object.entries(headers)) {
-    out[k] = typeof v === "string"
-      ? v.replace(/Bearer .+/, "Bearer <TOK>")
-          .replace(/sk-test-APIKEY|tok-test-ACCESS/g, "<CRED>")
-          .replace(/kimi-\d{10,}/g, "kimi-<TS>")
-      : v;
+    if (typeof v !== "string") { out[k] = v; continue; }
+    let s = v.replace(/Bearer .+/, "Bearer <TOK>")
+      .replace(/sk-test-APIKEY|tok-test-ACCESS/g, "<CRED>")
+      .replace(/kimi-\d{10,}/g, "kimi-<TS>");
+    if (k === "User-Agent" && s.startsWith("9Router/")) s = "9Router/<VER>";
+    else if (k === "X-CLIENT-VERSION" || k === "X-CORE-VERSION" || k === "X-Msh-Version") s = s.replace(/^\d+\.\d+\.\d+$/, "<VER>");
+    else if (k === "X-PLATFORM") s = "<PLATFORM>";
+    else if (k === "X-PLATFORM-VERSION") s = "<NODE>";
+    else if (k === "X-Msh-Device-Model") s = "<MODEL>";
+    else if (k === "X-Msh-Device-Name") s = "<HOST>";
+    out[k] = s;
   }
   return out;
 }
