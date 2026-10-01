@@ -27,7 +27,8 @@ jobs:
 
       - name: Regen golden-url-header snapshots
         working-directory: tests
-        run: ../node_modules/.bin/vitest run -u translator/golden-url-header.test.js
+        # ponytail: filter dulu, -u di akhir — "-u <file>" dimakan vitest sebagai nilai --update, semua suite ikut ke-run
+        run: ../node_modules/.bin/vitest run translator/golden-url-header.test.js -u
 
       - name: Regen providers baseline
         run: node tests/__baseline__/snapshot-providers.mjs
@@ -36,5 +37,6 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
+          git checkout sync/upstream-fixes-20261001
           git add tests/translator/__snapshots__/golden-url-header.test.js.snap tests/__baseline__/providers-baseline.json
-          git diff --cached --quiet && echo "no snapshot changes" || (git commit -m "test: regen golden-url-header snapshots + providers baseline" && git push)
+          git diff --cached --quiet && echo "no snapshot changes" || (git commit -m "test: regen golden-url-header snapshots + providers baseline" && git push origin sync/upstream-fixes-20261001)
