@@ -26,7 +26,8 @@ jobs:
           node-version: 22
 
       - name: Install root deps (no lockfile in repo — use install, not ci)
-        run: npm install --no-audit --no-fund
+        # ponytail: vitest installed at root too — tests/ hits npm arborist edgesOut bug, so reuse root binary instead of npx
+        run: npm install --no-audit --no-fund && npm install --no-save vitest@4 --no-audit --no-fund
 
       - name: Lint (non-blocking — upstream has pre-existing errors)
         continue-on-error: true
@@ -34,8 +35,7 @@ jobs:
 
       - name: Unit tests (skip real-provider tests — need API keys/network)
         working-directory: tests
-        # ponytail: no separate npm install in tests/ (npm arborist edgesOut bug) — npx fetches vitest on the fly
-        run: npx -y vitest@4 run --exclude '**/*.real.test.js' --exclude '**/real/**' --exclude '**/*.e2e.test.js'
+        run: ../node_modules/.bin/vitest run --exclude '**/*.real.test.js' --exclude '**/real/**' --exclude '**/*.e2e.test.js'
 
       - name: Build
         run: npm run build
