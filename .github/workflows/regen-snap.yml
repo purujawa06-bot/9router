@@ -1,0 +1,40 @@
+name: regen-snap
+
+# Temporary helper (manual only): regenerate golden-url-header snapshots +
+# providers baseline on the sync branch using a real runner (no local node).
+# Delete this file once snapshots are green.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  regen:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: sync/upstream-fixes-20261001
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install root deps
+        run: npm install --legacy-peer-deps --no-audit --no-fund vitest@4 --no-save
+
+      - name: Regen golden-url-header snapshots
+        working-directory: tests
+        run: ../node_modules/.bin/vitest run -u translator/golden-url-header.test.js
+
+      - name: Regen providers baseline
+        run: node tests/__baseline__/snapshot-providers.mjs
+
+      - name: Commit back
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add tests/translator/__snapshots__/golden-url-header.test.js.snap tests/__baseline__/providers-baseline.json
+          git diff --cached --quiet && echo "no snapshot changes" || (git commit -m "test: regen golden-url-header snapshots + providers baseline" && git push)
