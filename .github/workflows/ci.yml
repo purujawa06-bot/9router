@@ -26,8 +26,8 @@ jobs:
           node-version: 22
 
       - name: Install root deps (no lockfile in repo — use install, not ci)
-        # ponytail: vitest installed at root too — tests/ hits npm arborist edgesOut bug, so reuse root binary instead of npx
-        run: npm install --no-audit --no-fund && npm install --no-save vitest@4 --no-audit --no-fund
+        # ponytail: single npm invocation — a 2nd install in same dir hits npm arborist edgesOut bug; vitest rides along via --no-save
+        run: npm install vitest@4 --no-save --no-audit --no-fund
 
       - name: Lint (non-blocking — upstream has pre-existing errors)
         continue-on-error: true
