@@ -32,13 +32,10 @@ jobs:
         continue-on-error: true
         run: npx eslint .
 
-      - name: Install test deps
-        working-directory: tests
-        run: npm install --no-audit --no-fund
-
       - name: Unit tests (skip real-provider tests — need API keys/network)
         working-directory: tests
-        run: npx vitest run --exclude '**/*.real.test.js' --exclude '**/real/**' --exclude '**/*.e2e.test.js'
+        # ponytail: no separate npm install in tests/ (npm arborist edgesOut bug) — npx fetches vitest on the fly
+        run: npx -y vitest@4 run --exclude '**/*.real.test.js' --exclude '**/real/**' --exclude '**/*.e2e.test.js'
 
       - name: Build
         run: npm run build
