@@ -1,0 +1,45 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ci:
+    # ponytail: single job (not split lint/test/build), split if queue time matters
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install root deps (no lockfile in repo — use install, not ci)
+        run: npm install --no-audit --no-fund
+
+      - name: Lint
+        run: npx eslint .
+
+      - name: Install test deps
+        working-directory: tests
+        run: npm install --no-audit --no-fund
+
+      - name: Unit tests (skip real-provider tests — need API keys/network)
+        working-directory: tests
+        run: npx vitest run --exclude '**/*.real.test.js' --exclude '**/real/**' --exclude '**/*.e2e.test.js'
+
+      - name: Build
+        run: npm run build
+        env:
+          NEXT_PUBLIC_BASE_URL: http://localhost:20128
