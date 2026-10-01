@@ -26,8 +26,8 @@ jobs:
           node-version: 22
 
       - name: Install root deps (no lockfile in repo — use install, not ci)
-        # ponytail: single npm invocation — a 2nd install in same dir hits npm arborist edgesOut bug; vitest rides along via --no-save
-        run: npm install vitest@4 --no-save --no-audit --no-fund
+        # ponytail: single invocation + legacy-peer-deps (npm arborist edgesOut bug on vitest peer tree); vitest rides along via --no-save
+        run: npm install --legacy-peer-deps --no-audit --no-fund vitest@4 --no-save
 
       - name: Lint (non-blocking — upstream has pre-existing errors)
         continue-on-error: true
