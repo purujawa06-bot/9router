@@ -10,14 +10,24 @@ import {
 } from "../translator/formats/responsesApi.js";
 
 const SESSION_HEADER = "x-opencode-session";
+const REQUEST_HEADER = "x-opencode-request";
+const PROJECT_HEADER = "x-opencode-project";
 const SESSION_FIELD = "_opencodeZenSession";
+const REQUEST_FIELD = "_opencodeZenRequest";
 const MAX_SESSION_LENGTH = 256;
 
 const RESPONSES_BASE_URL = "https://opencode.ai/zen/v1/responses";
 const MAX_TOOL_NAME_LEN = 128;
-const OPENCODE_UA = "opencode/1.18.31";
+const OPENCODE_UA = "opencode/2.0.28";
 export const OPENCODE_SESSION_RE = /^ses_[0-9a-f]{12}[0-9A-Za-z]{14}$/;
+export const OPENCODE_REQUEST_RE = /^msg_[0-9a-f]{12}[0-9A-Za-z]{14}$/;
 const BASE62_CHARS = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+// Cache for translated downstream identities: each key maps to one
+// timestamp-based ses_/msg_ id so repeats are stable and the time component
+// stays plausible (upstream rejects hash-derived timestamps with 403).
+const translatedSessionCache = new Map();
+const translatedRequestCache = new Map();
+const MAX_TRANSLATED_IDS = 5000;
 // Free-tier fingerprint (mirrors opencode executor, PR #4132): upstream 403s
 // requests without the file-search quartet and without stream:true.
 const OPENCODE_FINGERPRINT_TOOLS = ["bash", "glob", "grep", "read"];
@@ -65,16 +75,95 @@ export function translateSessionId(sessionId, clientTool = "") {
   if (typeof sessionId === "string" && OPENCODE_SESSION_RE.test(sessionId.trim())) {
     return sessionId.trim();
   }
-  const digest = crypto
+  const key = crypto
     .createHash("sha256")
     .update(`opencode\0${clientTool || "generic"}\0${sessionId || ""}`)
-    .digest();
-  const timeHex = digest.subarray(0, 6).toString("hex");
-  let randomPart = "";
-  for (let i = 6; i < 20; i++) {
-    randomPart += BASE62_CHARS[digest[i] % 62];
+    .digest("hex");
+  const cached = translatedSessionCache.get(key);
+  if (cached) {
+    translatedSessionCache.delete(key);
+    translatedSessionCache.set(key, cached);
+    return cached;
   }
-  return `ses_${timeHex}${randomPart}`;
+  const fresh = generateSessionId();
+  if (translatedSessionCache.size >= MAX_TRANSLATED_IDS) {
+    translatedSessionCache.delete(translatedSessionCache.keys().next().value);
+  }
+  translatedSessionCache.set(key, fresh);
+  return fresh;
+}
+
+function normalizeRequestId(value) {
+  if (typeof value !== "string") return null;
+  const normalized = value.trim();
+  if (!normalized || normalized.length > MAX_SESSION_LENGTH) return null;
+  return OPENCODE_REQUEST_RE.test(normalized) ? normalized : null;
+}
+
+function lastUserText(body) {
+  try {
+    if (!body || typeof body !== "object") return "";
+    const arr = Array.isArray(body.messages)
+      ? body.messages
+      : Array.isArray(body.input)
+        ? body.input
+        : null;
+    if (!arr) return typeof body.input === "string" ? body.input.slice(-600) : "";
+    for (let i = arr.length - 1; i >= 0; i--) {
+      const msg = arr[i];
+      if (!msg) continue;
+      if (msg.role && msg.role !== "user") continue;
+      const content = msg.content;
+      if (typeof content === "string" && content.trim()) return content.trim().slice(-600);
+      if (Array.isArray(content)) {
+        const text = content
+          .map((part) => (typeof part === "string" ? part : part?.text || part?.input_text || ""))
+          .join(" ")
+          .trim();
+        if (text) return text.slice(-600);
+      }
+    }
+  } catch {
+    return "";
+  }
+  return "";
+}
+
+function deriveRequestId(sessionId, body) {
+  const text = lastUserText(body);
+  if (!text) return generateRequestId();
+  const key = crypto
+    .createHash("sha256")
+    .update(`opencode-req\0${sessionId || ""}\0${text}`)
+    .digest("hex");
+  const cached = translatedRequestCache.get(key);
+  if (cached) {
+    translatedRequestCache.delete(key);
+    translatedRequestCache.set(key, cached);
+    return cached;
+  }
+  const fresh = generateRequestId();
+  if (translatedRequestCache.size >= MAX_TRANSLATED_IDS) {
+    translatedRequestCache.delete(translatedRequestCache.keys().next().value);
+  }
+  translatedRequestCache.set(key, fresh);
+  return fresh;
+}
+
+function resolveZenRequestId(body, credentials, sessionId) {
+  const raw = credentials?.rawHeaders || {};
+  for (const [key, value] of Object.entries(raw)) {
+    if (key.toLowerCase() === REQUEST_HEADER) {
+      const normalized = normalizeRequestId(value);
+      if (normalized) return normalized;
+      break;
+    }
+  }
+  return deriveRequestId(sessionId, body);
+}
+
+function generateProjectId() {
+  return crypto.randomBytes(20).toString("hex");
 }
 
 function toolNameOf(tool) {
@@ -246,10 +335,12 @@ export class OpenCodeZenExecutor extends DefaultExecutor {
       connectionId: sourceCredentials.connectionId,
       scope: "opencode-zen",
     });
+    const session = native || translatedSession(resolved, clientTool);
 
     return {
       ...sourceCredentials,
-      [SESSION_FIELD]: native || translatedSession(resolved, clientTool),
+      [SESSION_FIELD]: session,
+      [REQUEST_FIELD]: resolveZenRequestId(body, sourceCredentials, session),
     };
   }
 
@@ -270,11 +361,19 @@ export class OpenCodeZenExecutor extends DefaultExecutor {
     const prepared = credentials?.[SESSION_FIELD];
     if (prepared) {
       headers[SESSION_HEADER] = prepared;
-      return headers;
+    } else {
+      const fallback = this.prepareRequestCredentials({ credentials });
+      headers[SESSION_HEADER] = fallback[SESSION_FIELD];
     }
-
-    const fallback = this.prepareRequestCredentials({ credentials });
-    headers[SESSION_HEADER] = fallback[SESSION_FIELD];
+    const preparedReq = credentials?.[REQUEST_FIELD];
+    if (preparedReq && OPENCODE_REQUEST_RE.test(preparedReq)) {
+      headers[REQUEST_HEADER] = preparedReq;
+    } else {
+      const rawReq = normalizeRequestId(lower[REQUEST_HEADER]);
+      headers[REQUEST_HEADER] = rawReq || generateRequestId();
+    }
+    const rawProject = lower[PROJECT_HEADER];
+    headers[PROJECT_HEADER] = (!rawProject || rawProject === "global") ? generateProjectId() : rawProject;
     return headers;
   }
 

@@ -13,7 +13,7 @@ import {
   coerceResponsesOutput,
 } from "../translator/formats/responsesApi.js";
 
-const OPENCODE_UA = "opencode/1.18.31";
+const OPENCODE_UA = "opencode/2.0.28";
 const MAX_TOOL_NAME_LEN = 128;
 const MAX_SESSION_LENGTH = 256;
 const SESSION_HEADER = "x-opencode-session";
@@ -22,6 +22,13 @@ const REQ_FIELD = "_opencodeRequest";
 export const OPENCODE_SESSION_RE = /^ses_[0-9a-f]{12}[0-9A-Za-z]{14}$/;
 export const OPENCODE_REQUEST_RE = /^msg_[0-9a-f]{12}[0-9A-Za-z]{14}$/;
 const BASE62_CHARS = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+// Cache for translated downstream identities: each key maps to one
+// timestamp-based ses_ id so repeats are stable and the time component stays
+// plausible (upstream rejects hash-derived timestamps with 403 FreeTierError).
+const translatedSessionCache = new Map();
+const MAX_TRANSLATED_SESSIONS = 5000;
+const translatedRequestCache = new Map();
+const MAX_TRANSLATED_REQUESTS = 5000;
 // Upstream free-tier gate (verified live 2026-09-18): /zen/v1/chat/completions
 // and /zen/v1/responses with `Authorization: Bearer public` reject requests
 // that do not look like the official OpenCode agentic client, even when
@@ -95,16 +102,25 @@ export function translateSessionId(sessionId, clientTool = "") {
   if (typeof sessionId === "string" && OPENCODE_SESSION_RE.test(sessionId.trim())) {
     return sessionId.trim();
   }
-  const digest = crypto
+  // Upstream validates the ses_ time component for plausibility (random hex
+  // decodes to an implausible date and 403s), so never hash bytes into the
+  // time slot. Map each downstream identity to one cached timestamp-based id.
+  const key = crypto
     .createHash("sha256")
     .update(`opencode\0${clientTool || "generic"}\0${sessionId || ""}`)
-    .digest();
-  const timeHex = digest.subarray(0, 6).toString("hex");
-  let randomPart = "";
-  for (let i = 6; i < 20; i++) {
-    randomPart += BASE62_CHARS[digest[i] % 62];
+    .digest("hex");
+  const cached = translatedSessionCache.get(key);
+  if (cached) {
+    translatedSessionCache.delete(key);
+    translatedSessionCache.set(key, cached);
+    return cached;
   }
-  return `ses_${timeHex}${randomPart}`;
+  const fresh = generateSessionId();
+  if (translatedSessionCache.size >= MAX_TRANSLATED_SESSIONS) {
+    translatedSessionCache.delete(translatedSessionCache.keys().next().value);
+  }
+  translatedSessionCache.set(key, fresh);
+  return fresh;
 }
 
 function normalizeSession(value) {
@@ -206,22 +222,28 @@ function lastUserText(body) {
 }
 
 // The real CLI sends the current user message id (stable per turn, same on
-// retries) as x-opencode-request. Derive it deterministically from the
-// session plus the last user message so retries share the id.
+// retries) as x-opencode-request. Map each session+message to one cached
+// timestamp-based msg_ id so retries share the id and the time component
+// stays plausible (hash-derived timestamps 403 like sessions do).
 export function deriveRequestId(sessionId, body) {
   const text = lastUserText(body);
   if (!text) return generateRequestId();
-  const digest = crypto
+  const key = crypto
     .createHash("sha256")
     .update(`opencode-req\0${sessionId || ""}\0${text}`)
-    .digest();
-  const timeHex = digest.subarray(0, 6).toString("hex");
-  let randomPart = "";
-  for (let i = 6; i < 20; i++) {
-    randomPart += BASE62_CHARS[digest[i] % 62];
+    .digest("hex");
+  const cached = translatedRequestCache.get(key);
+  if (cached) {
+    translatedRequestCache.delete(key);
+    translatedRequestCache.set(key, cached);
+    return cached;
   }
-  const id = `msg_${timeHex}${randomPart}`;
-  return OPENCODE_REQUEST_RE.test(id) ? id : generateRequestId();
+  const fresh = generateRequestId();
+  if (translatedRequestCache.size >= MAX_TRANSLATED_REQUESTS) {
+    translatedRequestCache.delete(translatedRequestCache.keys().next().value);
+  }
+  translatedRequestCache.set(key, fresh);
+  return OPENCODE_REQUEST_RE.test(fresh) ? fresh : generateRequestId();
 }
 
 function normalizeRequestId(value) {
