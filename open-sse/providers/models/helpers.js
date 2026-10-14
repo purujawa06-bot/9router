@@ -46,6 +46,9 @@ const OPENCODE_FAMILIES = [
   { match: /^deepseek-v4-(pro|flash)/, supportedFormats: [FORMATS.OPENAI, FORMATS.CLAUDE, FORMATS.OPENAI_RESPONSES] },
   { match: /^(minimax|qwen)/, supportedFormats: [FORMATS.OPENAI, FORMATS.CLAUDE] },
   { match: /^claude-/i, supportedFormats: [FORMATS.CLAUDE] },
+  // Retired from the curated registry (absent from live /inference/v1/models)
+  // but still routed to the Messages lane when called via passthrough.
+  { match: /^union-alpha$/i, supportedFormats: [FORMATS.CLAUDE], targetFormat: FORMATS.CLAUDE },
 ];
 
 export function opencodeFamilyFormats(modelId) {

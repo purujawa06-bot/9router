@@ -9,12 +9,9 @@ const MODEL = "union-alpha";
 const PROVIDER = "opencode";
 
 describe("OpenCode Free union-alpha integration", () => {
-  it("declares union-alpha in the registry with targetFormat claude", () => {
+  it("is retired from the oc registry (absent from live /inference/v1/models)", () => {
     const modelEntry = opencode.models.find((m) => m.id === MODEL);
-    expect(modelEntry).toBeDefined();
-    expect(modelEntry?.name).toBe("Union Alpha Free");
-    expect(modelEntry?.targetFormat).toBe(FORMATS.CLAUDE);
-    expect(getModelTargetFormat("oc", MODEL)).toBe(FORMATS.CLAUDE);
+    expect(modelEntry).toBeUndefined();
   });
 
   it("advertises correct capabilities: vision, 262K contextWindow, 131K maxOutput", () => {
