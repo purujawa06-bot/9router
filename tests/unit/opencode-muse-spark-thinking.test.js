@@ -73,7 +73,7 @@ describe("OpenCode Free Muse Spark thinking", () => {
 
     expect(getModelTargetFormat("oc", "union-alpha")).toBe(FORMATS.CLAUDE);
     const url = executor.buildUrl("union-alpha");
-    expect(url).toBe("https://opencode.ai/zen/v1/messages");
+    expect(url).toBe("https://opencode.ai/inference/v1/messages");
     expect(executor.buildHeaders({}, true, url)).toMatchObject({
       "anthropic-version": "2023-06-01",
     });
@@ -100,7 +100,7 @@ describe("OpenCode Free Muse Spark thinking", () => {
     const executor = new OpenCodeExecutor();
     const body = { messages: [{ role: "user", content: "hi" }], max_tokens: 1024 };
     executor.transformRequest("big-pickle", body, true, {});
-    expect(executor.buildUrl("big-pickle")).toBe("https://opencode.ai/zen/v1/chat/completions");
+    expect(executor.buildUrl("big-pickle")).toBe("https://opencode.ai/inference/v1/chat/completions");
     expect(body.max_tokens).toBe(1024);
     expect(body.max_output_tokens).toBeUndefined();
   });
@@ -136,8 +136,8 @@ describe("OpenCode Free Muse Spark thinking", () => {
     const futureModel = "muse-spark-1.4-contributor-free";
 
     for (const m of ["muse-spark-1.3-contributor-free", futureModel]) {
-      expect(executor.buildUrl(m)).toBe("https://opencode.ai/zen/v1/responses");
-      expect(executor.buildUrl(`${m}(high)`)).toBe("https://opencode.ai/zen/v1/responses");
+      expect(executor.buildUrl(m)).toBe("https://opencode.ai/inference/v1/responses");
+      expect(executor.buildUrl(`${m}(high)`)).toBe("https://opencode.ai/inference/v1/responses");
       expect(getModelTargetFormat("oc", m)).toBe("openai-responses");
 
       const body = {
@@ -215,7 +215,8 @@ describe("OpenCode Free Muse Spark thinking", () => {
     const types = out.input.map((item) => item.type);
     expect(types).toEqual(["message", "function_call", "function_call_output", "message"]);
     // Tools flattened and empty properties added; the upstream-mandated
-    // file-search quartet is merged in so free-tier requests pass the gate.
+    // read/shell pair is merged in so free-tier requests pass the gate.
+    // The caller already declares shell, so only canonical read is appended.
     expect(out.tools).toEqual([
       {
         type: "function",
@@ -225,27 +226,13 @@ describe("OpenCode Free Muse Spark thinking", () => {
       },
       {
         type: "function",
-        name: "bash",
-        description: "OpenCode built-in bash tool",
-        parameters: { type: "object", properties: {} },
-      },
-      {
-        type: "function",
-        name: "glob",
-        description: "OpenCode built-in glob tool",
-        parameters: { type: "object", properties: {} },
-      },
-      {
-        type: "function",
-        name: "grep",
-        description: "OpenCode built-in grep tool",
-        parameters: { type: "object", properties: {} },
-      },
-      {
-        type: "function",
         name: "read",
-        description: "OpenCode built-in read tool",
-        parameters: { type: "object", properties: {} },
+        description: expect.stringContaining("Read the contents of a file or directory"),
+        parameters: {
+          type: "object",
+          properties: { path: { type: "string", description: "File or directory to read" } },
+          required: ["path"],
+        },
       },
     ]);
   });

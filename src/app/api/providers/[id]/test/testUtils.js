@@ -797,8 +797,8 @@ async function testApiKeyConnection(connection, effectiveProxy = null) {
         return { valid, error: valid ? null : "Session expired — re-paste cookie" };
       }
       case "opencode": {
-        const res = await fetchWithConnectionProxy("https://opencode.ai/zen/v1/models", {
-          headers: { Authorization: "Bearer public", "User-Agent": "opencode/2.0.28" },
+        const res = await fetchWithConnectionProxy("https://opencode.ai/inference/v1/models", {
+          headers: { Authorization: "Bearer public", "User-Agent": "opencode/latest/2.0.29/cli" },
         }, effectiveProxy);
         return { valid: res.ok, error: res.ok ? null : "OpenCode free tier unavailable" };
       }

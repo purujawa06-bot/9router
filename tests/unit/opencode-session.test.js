@@ -171,33 +171,33 @@ describe("OpenCode Free Executor Session Resolution", () => {
 });
 
 describe("OpenCode Free User-Agent Validation", () => {
-  it("defaults User-Agent to opencode/2.0.28 for non-opencode downstream clients", () => {
+  it("defaults User-Agent to opencode/latest/2.0.29/cli for non-opencode downstream clients", () => {
     const executor = getExecutor("opencode");
     const headersNoUa = executor.buildHeaders({});
-    expect(headersNoUa["User-Agent"]).toBe("opencode/2.0.28");
+    expect(headersNoUa["User-Agent"]).toBe("opencode/latest/2.0.29/cli");
 
     const headersClaude = executor.buildHeaders({ rawHeaders: { "user-agent": "Claude-Code/1.0" } });
-    expect(headersClaude["User-Agent"]).toBe("opencode/2.0.28");
+    expect(headersClaude["User-Agent"]).toBe("opencode/latest/2.0.29/cli");
   });
 
-  it("replaces bare opencode with versioned opencode/2.0.28 to prevent 403 FreeTierError", () => {
+  it("replaces bare opencode with versioned opencode/latest/2.0.29/cli to prevent 403 FreeTierError", () => {
     const executor = getExecutor("opencode");
     const headers = executor.buildHeaders({ rawHeaders: { "user-agent": "opencode" } });
-    expect(headers["User-Agent"]).toBe("opencode/2.0.28");
+    expect(headers["User-Agent"]).toBe("opencode/latest/2.0.29/cli");
   });
 
   it("upgrades outdated opencode versions (< 1.17) to prevent 426 Upgrade Required", () => {
     const executor = getExecutor("opencode");
     const headers = executor.buildHeaders({ rawHeaders: { "user-agent": "opencode/1.15.0" } });
-    expect(headers["User-Agent"]).toBe("opencode/2.0.28");
+    expect(headers["User-Agent"]).toBe("opencode/latest/2.0.29/cli");
   });
 
   it("preserves valid opencode versions (>= 1.17)", () => {
     const executor = getExecutor("opencode");
     const headers118 = executor.buildHeaders({
-      rawHeaders: { "user-agent": "opencode/2.0.28 ai-sdk/provider-utils/4.0.40 runtime/bun/1.3.14" },
+      rawHeaders: { "user-agent": "opencode/latest/2.0.29/cli ai-sdk/provider-utils/4.0.40 runtime/bun/1.3.14" },
     });
-    expect(headers118["User-Agent"]).toBe("opencode/2.0.28 ai-sdk/provider-utils/4.0.40 runtime/bun/1.3.14");
+    expect(headers118["User-Agent"]).toBe("opencode/latest/2.0.29/cli ai-sdk/provider-utils/4.0.40 runtime/bun/1.3.14");
 
     const headersFuture = executor.buildHeaders({ rawHeaders: { "user-agent": "opencode/1.19.0" } });
     expect(headersFuture["User-Agent"]).toBe("opencode/1.19.0");
@@ -216,7 +216,7 @@ describe("OpenCode Free Upstream Gates (stream + tool fingerprint)", () => {
     expect(out.stream).toBe(true);
   });
 
-  it("injects the file-search quartet into chat bodies without tools", () => {
+  it("injects the read/shell fingerprint into chat bodies without tools", () => {
     const executor = getExecutor("opencode");
     const out = executor.transformRequest(
       "mimo-v2.5-free",
@@ -225,7 +225,7 @@ describe("OpenCode Free Upstream Gates (stream + tool fingerprint)", () => {
       { rawHeaders: {} },
     );
     const names = out.tools.map((t) => t.function?.name);
-    for (const required of ["bash", "glob", "grep", "read"]) {
+    for (const required of ["read", "shell"]) {
       expect(names).toContain(required);
     }
   });
@@ -244,7 +244,7 @@ describe("OpenCode Free Upstream Gates (stream + tool fingerprint)", () => {
     );
     const names = out.tools.map((t) => t.function?.name);
     expect(names[0]).toBe("my_tool");
-    for (const required of ["bash", "glob", "grep", "read"]) {
+    for (const required of ["read", "shell"]) {
       expect(names).toContain(required);
     }
   });
@@ -260,7 +260,7 @@ describe("OpenCode Free Upstream Gates (stream + tool fingerprint)", () => {
     expect(out.stream).toBe(true);
     expect(out.store).toBe(false);
     const names = out.tools.map((t) => t.name);
-    for (const required of ["bash", "glob", "grep", "read"]) {
+    for (const required of ["read", "shell"]) {
       expect(names).toContain(required);
     }
   });
@@ -327,13 +327,29 @@ describe("OpenCode Stable Session Reuse (429 follow-up)", () => {
     ).not.toBe(first);
   });
 
-  it("preserves a valid downstream x-opencode-request header", () => {
+  it("forwards a valid downstream x-opencode-request header, never injects one", () => {
     const executor = getExecutor("opencode");
     const validReq = "msg_0ae8d9cd3001swxaFbM248jcIF";
-    const { prepared } = prepare(executor, {
-      credentials: makeCredentials({ rawHeaders: { "x-opencode-request": validReq } }),
-    });
-    expect(prepared._opencodeRequest).toBe(validReq);
+    const withDownstream = executor.buildHeaders(
+      { rawHeaders: { "x-opencode-request": validReq } },
+    );
+    expect(withDownstream["x-opencode-request"]).toBe(validReq);
+
+    // Upstream rejects injected request ids: without a downstream header none is sent.
+    const withoutDownstream = executor.buildHeaders({});
+    expect(withoutDownstream).not.toHaveProperty("x-opencode-request");
+  });
+
+  it("sends the session under the v2 header quartet with identical values", () => {
+    const executor = getExecutor("opencode");
+    const headers = executor.buildHeaders({});
+    const session = headers["x-opencode-session"];
+    expect(session).toMatch(OPENCODE_SESSION_RE);
+    expect(headers["x-opencode-session-id"]).toBe(session);
+    expect(headers["x-session-affinity"]).toBe(session);
+    expect(headers["x-session-id"]).toBe(session);
+    expect(headers["x-opencode-project"]).toBe("global");
+    expect(headers).not.toHaveProperty("x-api-key");
   });
 
   it("keeps the standalone buildHeaders session stable across calls", () => {

@@ -26,7 +26,7 @@ describe("OpenCode Free union-alpha integration", () => {
 
   it("routes union-alpha to /zen/v1/messages endpoint", () => {
     const executor = new OpenCodeExecutor();
-    expect(executor.buildUrl(MODEL)).toBe("https://opencode.ai/zen/v1/messages");
+    expect(executor.buildUrl(MODEL)).toBe("https://opencode.ai/inference/v1/messages");
   });
 
   it("builds correct headers with OpenCode CLI UA, timestamp-encoded session/request, and anthropic headers", () => {
@@ -36,11 +36,12 @@ describe("OpenCode Free union-alpha integration", () => {
 
     expect(headers["Content-Type"]).toBe("application/json");
     expect(headers["Authorization"]).toBe("Bearer public");
-    expect(headers["x-api-key"]).toBe("public");
+    expect(headers).not.toHaveProperty("x-api-key");
     expect(headers["anthropic-version"]).toBe("2023-06-01");
     expect(headers["x-opencode-client"]).toBe("desktop");
     expect(headers["x-opencode-session"]).toMatch(/^ses_[0-9a-f]{12}[0-9A-Za-z]{14}$/);
-    expect(headers["x-opencode-request"]).toMatch(/^msg_[0-9a-f]{12}[0-9A-Za-z]{14}$/);
-    expect(headers["x-opencode-project"]).toMatch(/^[0-9a-f]{40}$/);
+    expect(headers["x-opencode-session-id"]).toBe(headers["x-opencode-session"]);
+    expect(headers["x-opencode-project"]).toBe("global");
+    expect(headers).not.toHaveProperty("x-opencode-request");
   });
 });

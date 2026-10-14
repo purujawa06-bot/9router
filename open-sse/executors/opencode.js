@@ -13,12 +13,11 @@ import {
   coerceResponsesOutput,
 } from "../translator/formats/responsesApi.js";
 
-const OPENCODE_UA = "opencode/2.0.28";
+const OPENCODE_UA = "opencode/latest/2.0.29/cli";
 const MAX_TOOL_NAME_LEN = 128;
 const MAX_SESSION_LENGTH = 256;
 const SESSION_HEADER = "x-opencode-session";
 const SESSION_FIELD = "_opencodeSession";
-const REQ_FIELD = "_opencodeRequest";
 export const OPENCODE_SESSION_RE = /^ses_[0-9a-f]{12}[0-9A-Za-z]{14}$/;
 export const OPENCODE_REQUEST_RE = /^msg_[0-9a-f]{12}[0-9A-Za-z]{14}$/;
 const BASE62_CHARS = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
@@ -29,23 +28,62 @@ const translatedSessionCache = new Map();
 const MAX_TRANSLATED_SESSIONS = 5000;
 const translatedRequestCache = new Map();
 const MAX_TRANSLATED_REQUESTS = 5000;
-// Upstream free-tier gate (verified live 2026-09-18): /zen/v1/chat/completions
-// and /zen/v1/responses with `Authorization: Bearer public` reject requests
-// that do not look like the official OpenCode agentic client, even when
-// User-Agent/session shape are valid. Concretely enforced:
+// Upstream free-tier gate (verified live 2026-10-14, after the v2 migration):
+// /inference/v1/chat/completions and /inference/v1/responses reject requests
+// that do not look like the official OpenCode v2 agentic client. Concretely enforced:
+// - endpoint must be /inference/v1/... (/zen/v1/... 403s, even for the real CLI);
+// - User-Agent must be the v2 channel form opencode/<channel>/<version>/<client>;
+// - no x-api-key header (it poisons the request into 403; Bearer public is enough);
+// - tools must include OpenCode's own read and shell declarations with their
+//   official descriptions/parameters (stub text is rejected);
 // - stream must be true (stream:false → 403 FreeTierError);
-// - tools must include the file-search quartet {bash, glob, grep, read}
-//   (0–3 of them → 403; the remaining six builtins are optional extras).
+// - never inject x-opencode-request (rejected); forward it only if downstream sent one.
 // Missing-tool requests are the common 9router case: plain chat callers send
 // no tools, so without injection every such request 403s.
-const OPENCODE_FINGERPRINT_TOOLS = ["bash", "glob", "grep", "read"];
+// Official OpenCode tool definitions (captured from the v2 client): the gate
+// validates descriptions/parameters, so stub text is rejected upstream.
+const OPENCODE_FINGERPRINT_TOOLS = ["read", "shell"];
+const OPENCODE_CANONICAL_TOOL_DEFINITIONS = {
+  read: {
+    description: "Read the contents of a file or directory. Supports text files, images, and PDFs. Images and PDFs are presented directly to the model. Each text line is prefixed by its 1-based line number as <line>: <content>. The prefix is for reference and is not part of the file content. Directory entries are returned one per line. Use offset and limit to read large files or directories in sections. Prefer one larger read over many small slices, and use grep to find specific content in large files.",
+    parameters: {
+      type: "object",
+      properties: {
+        path: { type: "string", description: "File or directory to read" },
+      },
+      required: ["path"],
+    },
+  },
+  shell: {
+    description: "Execute a shell command and return its output. Commands run on Windows using pwsh. Quote file paths containing spaces with double quotes. Prefer dedicated tools over shell commands when possible. When output is large, the full result is saved to a file and a truncated preview is returned. Rely on automatic truncation unless filtering the output is more useful. Commands accept an optional timeout, background commands have no timeout by default. Background commands return immediately, and you will be notified when they complete.",
+    parameters: {
+      type: "object",
+      properties: {
+        command: { type: "string", description: "Shell command string to execute" },
+      },
+      required: ["command"],
+    },
+  },
+};
+
+// Canonical fingerprint name for a caller tool (bash is OpenCode's shell under
+// another name); "" when the tool is outside the fingerprint contract.
+function fingerprintToolKey(name) {
+  const lower = String(name ?? "").trim().toLowerCase();
+  if (lower === "bash" || lower === "shell") return "shell";
+  if (lower === "read") return "read";
+  return "";
+}
 
 function hasValidOpencodeVersion(ua) {
-  const m = String(ua || "").match(/opencode\/(\d+)\.(\d+)(?:\.(\d+))?/i);
+  if (!ua || typeof ua !== "string") return false;
+  // Strictly match the OpenCode version tag (opencode/latest/2.0.29/cli or
+  // opencode/1.18.x) so generic browser tokens like Mozilla/5.0 never match.
+  const m = ua.match(/\bopencode\/(?:(?:latest|stable|preview|dev|beta|[a-zA-Z0-9._-]+)\/)?(\d+)\.(\d+)(?:\.(\d+))?/i);
   if (!m) return false;
   const major = parseInt(m[1], 10);
   const minor = parseInt(m[2], 10);
-  return major > 1 || (major === 1 && minor >= 17);
+  return major >= 2 || (major === 1 && minor >= 17);
 }
 // Models served by /zen/v1/responses; every other model stays on /chat/completions.
 const RESPONSES_MODELS = new Set([
@@ -139,10 +177,6 @@ function nativeSession(headers) {
     }
   }
   return null;
-}
-
-function generateProjectId() {
-  return crypto.randomBytes(20).toString("hex");
 }
 
 // Upstream free-tier quota is accounted per session. Minting a fresh
@@ -334,18 +368,6 @@ function resolveOpencodeSession(body, credentials, providerSessionId, clientTool
   return stableSessionId(credentials);
 }
 
-function resolveOpencodeRequestId(body, credentials, sessionId) {
-  const raw = credentials?.rawHeaders || {};
-  for (const [key, value] of Object.entries(raw)) {
-    if (key.toLowerCase() === "x-opencode-request") {
-      const normalized = normalizeRequestId(value);
-      if (normalized) return normalized;
-      break;
-    }
-  }
-  return deriveRequestId(sessionId, body);
-}
-
 function normalizeResponsesTools(body) {
   if (!Array.isArray(body.tools)) return;
   const validNames = new Set();
@@ -382,30 +404,30 @@ function toolNameOf(tool) {
   return raw.trim();
 }
 
-// Merge the upstream-mandated file-search quartet into Chat Completions
-// bodies. Caller tools are preserved verbatim (extras are allowed upstream);
-// only the missing fingerprint names are appended as no-op declarations the
-// model may ignore. Without this, plain chat callers that send no tools get
-// 403 FreeTierError on every request.
+// Merge the upstream-mandated read/shell declarations into Chat Completions
+// bodies. Caller tools are preserved verbatim; only the missing fingerprint
+// names are appended with their official definitions, which the model ignores
+// when the caller never invokes them.
 function ensureChatFingerprintTools(body) {
   if (!body || typeof body !== "object") return;
   const present = new Set();
   if (Array.isArray(body.tools)) {
     for (const tool of body.tools) {
-      const name = toolNameOf(tool);
-      if (name) present.add(name);
+      const key = fingerprintToolKey(toolNameOf(tool));
+      if (key) present.add(key);
     }
   } else {
     body.tools = [];
   }
   for (const name of OPENCODE_FINGERPRINT_TOOLS) {
     if (present.has(name)) continue;
+    const definition = OPENCODE_CANONICAL_TOOL_DEFINITIONS[name];
     body.tools.push({
       type: "function",
       function: {
         name,
-        description: `OpenCode built-in ${name} tool`,
-        parameters: { type: "object", properties: {} },
+        description: definition.description,
+        parameters: definition.parameters,
       },
     });
     present.add(name);
@@ -420,19 +442,20 @@ function ensureResponsesFingerprintTools(body) {
   const present = new Set();
   if (Array.isArray(body.tools)) {
     for (const tool of body.tools) {
-      const name = toolNameOf(tool);
-      if (name) present.add(name);
+      const key = fingerprintToolKey(toolNameOf(tool));
+      if (key) present.add(key);
     }
   } else {
     body.tools = [];
   }
   for (const name of OPENCODE_FINGERPRINT_TOOLS) {
     if (present.has(name)) continue;
+    const definition = OPENCODE_CANONICAL_TOOL_DEFINITIONS[name];
     body.tools.push({
       type: "function",
       name,
-      description: `OpenCode built-in ${name} tool`,
-      parameters: { type: "object", properties: {} },
+      description: definition.description,
+      parameters: definition.parameters,
     });
     present.add(name);
   }
@@ -506,7 +529,6 @@ export class OpenCodeExecutor extends BaseExecutor {
     return {
       ...sourceCredentials,
       [SESSION_FIELD]: session,
-      [REQ_FIELD]: resolveOpencodeRequestId(body, sourceCredentials, session),
     };
   }
 
@@ -560,12 +582,12 @@ export class OpenCodeExecutor extends BaseExecutor {
   buildUrl(model) {
     const base = this.config.baseUrl;
     if (isResponsesModel(model)) {
-      return `${base}/zen/v1/responses`;
+      return `${base}/inference/v1/responses`;
     }
     if (isMessagesModel(model)) {
-      return `${base}/zen/v1/messages`;
+      return `${base}/inference/v1/messages`;
     }
-    return `${base}/zen/v1/chat/completions`;
+    return `${base}/inference/v1/chat/completions`;
   }
 
   buildHeaders(credentials, stream = true, url = "", model = "") {
@@ -577,22 +599,23 @@ export class OpenCodeExecutor extends BaseExecutor {
     const isOpencodeDownstream = hasValidOpencodeVersion(downstreamUa);
     const isMessages = (url && url.endsWith("/messages")) || isMessagesModel(model);
 
-    const session = credentials?.[SESSION_FIELD] || this.prepareRequestCredentials({ credentials })[SESSION_FIELD];
-    const downstreamReq = normalizeRequestId(lower["x-opencode-request"]);
-    const requestId = credentials?.[REQ_FIELD] || downstreamReq || generateRequestId();
-
-    const rawProject = lower["x-opencode-project"];
-    const project = (!rawProject || rawProject === "global") ? generateProjectId() : rawProject;
+    const session = credentials?.[SESSION_FIELD] || this.prepareRequestCredentials({ credentials })[SESSION_FIELD] || generateSessionId();
+    const auth = credentials?.apiKey ? `Bearer ${credentials.apiKey}` : "Bearer public";
 
     const headers = {
       "Content-Type": "application/json",
-      "Authorization": "Bearer public",
-      "x-api-key": "public",
+      "Authorization": auth,
       "User-Agent": isOpencodeDownstream ? downstreamUa : OPENCODE_UA,
       "x-opencode-client": lower["x-opencode-client"] || "desktop",
       "x-opencode-session": session,
-      "x-opencode-request": requestId,
-      "x-opencode-project": project,
+      // The v2 gate reads the session under all four names with identical values.
+      "x-opencode-session-id": session,
+      "x-session-affinity": session,
+      "x-session-id": session,
+      // Never inject x-opencode-request: upstream rejects it. Forward it only
+      // when the downstream client sent one (official clients do).
+      ...(normalizeRequestId(lower["x-opencode-request"]) ? { "x-opencode-request": lower["x-opencode-request"].trim() } : {}),
+      "x-opencode-project": lower["x-opencode-project"] || "global",
       "Accept": stream ? "text/event-stream" : "*/*",
     };
 

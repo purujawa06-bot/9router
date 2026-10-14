@@ -37,12 +37,12 @@ export default {
   ],
   serviceKinds: ["llm", "systemone"],
   systemoneConfig: {
-    baseUrl: "https://opencode.ai/zen/v1/systemone",
+    baseUrl: "https://opencode.ai/inference/v1/systemone",
     headers: {
       "x-opencode-client": "desktop",
-      "User-Agent": "opencode/2.0.28",
+      "User-Agent": "opencode/latest/2.0.29/cli",
     },
   },
-  modelsFetcher: { url: "https://opencode.ai/zen/v1/models", type: "opencode-free" },
+  modelsFetcher: { url: "https://opencode.ai/inference/v1/models", type: "opencode-free" },
   passthroughModels: true,
 };

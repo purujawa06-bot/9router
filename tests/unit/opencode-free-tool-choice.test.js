@@ -10,9 +10,9 @@ vi.mock("../../open-sse/utils/proxyFetch.js", () => ({
 // Break caught: opencode/muse-spark-1.3-contributor-free 400 vì upstream
 // chỉ nhận tool_choice "auto"; named/required/none phải demote sang "auto".
 const FREE_13 = "muse-spark-1.3-contributor-free";
-// Fork: our free-tier fingerprint quartet (bash/glob/grep/read) is appended
-// to every free-tier body, so tools carry the caller tool + the quartet.
-const FORK_TOOL_NAMES = ["get_weather", "bash", "glob", "grep", "read"];
+// Fork: our free-tier fingerprint pair (read/shell) is appended
+// to every free-tier body, so tools carry the caller tool + the pair.
+const FORK_TOOL_NAMES = ["get_weather", "read", "shell"];
 const CREDS = { connectionId: "opencode-free-tool-choice-test" };
 const INPUT = [{ type: "message", role: "user", content: [{ type: "input_text", text: "hi" }] }];
 const TOOLS = [{ type: "function", name: "get_weather", description: "w", parameters: { type: "object", properties: {} } }];
@@ -72,18 +72,18 @@ describe("opencode Free 1.3 tool_choice auto-only", () => {
     expect(out.tool_choice).toEqual(choice);
   });
 
-  it("wire: execute gửi choice auto tới /zen/v1/responses", async () => {
+  it("wire: execute gửi choice auto tới /inference/v1/responses", async () => {
     proxyAwareFetch.mockClear();
     const ex = new OpenCodeExecutor();
     const body = responsesBody(FREE_13, { type: "function", name: "get_weather" });
     const { url, transformedBody } = await ex.execute({
       model: FREE_13, body, stream: true, credentials: CREDS,
     });
-    expect(url).toBe("https://opencode.ai/zen/v1/responses");
+    expect(url).toBe("https://opencode.ai/inference/v1/responses");
     expect(transformedBody.tool_choice).toBe("auto");
     expect(proxyAwareFetch).toHaveBeenCalledTimes(1);
     const [actualUrl, actualInit] = proxyAwareFetch.mock.calls[0];
-    expect(actualUrl).toBe("https://opencode.ai/zen/v1/responses");
+    expect(actualUrl).toBe("https://opencode.ai/inference/v1/responses");
     const sent = JSON.parse(actualInit.body);
     expect(sent.tool_choice).toBe("auto");
     expect(sent.model).toBe(FREE_13);
