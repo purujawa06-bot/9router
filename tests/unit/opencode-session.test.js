@@ -156,6 +156,23 @@ describe("OpenCode Free Executor Session Resolution", () => {
     expect(credentials).not.toHaveProperty("_opencodeSession");
   });
 
+  it("sends the session under both x-opencode-session and x-opencode-session-id", async () => {
+    const executor = getExecutor("opencode");
+    const credentials = makeCredentials();
+    const result = await executor.execute({
+      model: "muse-spark-1.3-contributor-free",
+      body: { input: [{ type: "message", role: "user", content: [{ type: "input_text", text: "hello" }] }] },
+      stream: false,
+      credentials,
+      providerSessionId: "conversation-session-id-test",
+      clientTool: "claude",
+    });
+
+    expect(result.headers["x-opencode-session"]).toMatch(OPENCODE_SESSION_RE);
+    expect(result.headers["x-opencode-session-id"]).toBe(result.headers["x-opencode-session"]);
+    expect(fetchMock.mock.calls[0][1].headers["x-opencode-session-id"]).toBe(result.headers["x-opencode-session"]);
+  });
+
   it("falls back to a valid generated session in buildHeaders when called standalone", () => {
     const executor = getExecutor("opencode");
     const headers = executor.buildHeaders({});
@@ -171,33 +188,33 @@ describe("OpenCode Free Executor Session Resolution", () => {
 });
 
 describe("OpenCode Free User-Agent Validation", () => {
-  it("defaults User-Agent to opencode/2.0.28 for non-opencode downstream clients", () => {
+  it("defaults User-Agent to opencode/1.18.35 for non-opencode downstream clients", () => {
     const executor = getExecutor("opencode");
     const headersNoUa = executor.buildHeaders({});
-    expect(headersNoUa["User-Agent"]).toBe("opencode/2.0.28");
+    expect(headersNoUa["User-Agent"]).toBe("opencode/1.18.35");
 
     const headersClaude = executor.buildHeaders({ rawHeaders: { "user-agent": "Claude-Code/1.0" } });
-    expect(headersClaude["User-Agent"]).toBe("opencode/2.0.28");
+    expect(headersClaude["User-Agent"]).toBe("opencode/1.18.35");
   });
 
-  it("replaces bare opencode with versioned opencode/2.0.28 to prevent 403 FreeTierError", () => {
+  it("replaces bare opencode with versioned opencode/1.18.35 to prevent 403 FreeTierError", () => {
     const executor = getExecutor("opencode");
     const headers = executor.buildHeaders({ rawHeaders: { "user-agent": "opencode" } });
-    expect(headers["User-Agent"]).toBe("opencode/2.0.28");
+    expect(headers["User-Agent"]).toBe("opencode/1.18.35");
   });
 
   it("upgrades outdated opencode versions (< 1.17) to prevent 426 Upgrade Required", () => {
     const executor = getExecutor("opencode");
     const headers = executor.buildHeaders({ rawHeaders: { "user-agent": "opencode/1.15.0" } });
-    expect(headers["User-Agent"]).toBe("opencode/2.0.28");
+    expect(headers["User-Agent"]).toBe("opencode/1.18.35");
   });
 
   it("preserves valid opencode versions (>= 1.17)", () => {
     const executor = getExecutor("opencode");
     const headers118 = executor.buildHeaders({
-      rawHeaders: { "user-agent": "opencode/2.0.28 ai-sdk/provider-utils/4.0.40 runtime/bun/1.3.14" },
+      rawHeaders: { "user-agent": "opencode/1.18.35 ai-sdk/provider-utils/4.0.40 runtime/bun/1.3.14" },
     });
-    expect(headers118["User-Agent"]).toBe("opencode/2.0.28 ai-sdk/provider-utils/4.0.40 runtime/bun/1.3.14");
+    expect(headers118["User-Agent"]).toBe("opencode/1.18.35 ai-sdk/provider-utils/4.0.40 runtime/bun/1.3.14");
 
     const headersFuture = executor.buildHeaders({ rawHeaders: { "user-agent": "opencode/1.19.0" } });
     expect(headersFuture["User-Agent"]).toBe("opencode/1.19.0");
