@@ -13,7 +13,7 @@ import {
   coerceResponsesOutput,
 } from "../translator/formats/responsesApi.js";
 
-const OPENCODE_UA = "opencode/1.18.35";
+const OPENCODE_UA = "opencode/2.0.28";
 const MAX_TOOL_NAME_LEN = 128;
 const MAX_SESSION_LENGTH = 256;
 const SESSION_HEADER = "x-opencode-session";
@@ -589,10 +589,8 @@ export class OpenCodeExecutor extends BaseExecutor {
       "Authorization": "Bearer public",
       "x-api-key": "public",
       "User-Agent": isOpencodeDownstream ? downstreamUa : OPENCODE_UA,
-      "x-opencode-client": lower["x-opencode-client"] || "cli",
+      "x-opencode-client": lower["x-opencode-client"] || "desktop",
       "x-opencode-session": session,
-      // Upstream requires the session under both names with identical values.
-      "x-opencode-session-id": session,
       "x-opencode-request": requestId,
       "x-opencode-project": project,
       "Accept": stream ? "text/event-stream" : "*/*",

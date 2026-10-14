@@ -818,7 +818,7 @@
     "baseUrl": "https://opencode.ai",
     "forceStream": true,
     "headers": {
-      "x-opencode-client": "cli"
+      "x-opencode-client": "desktop"
     },
     "noAuth": true,
     "quirks": {

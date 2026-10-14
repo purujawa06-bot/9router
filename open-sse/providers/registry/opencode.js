@@ -19,7 +19,7 @@ export default {
     // for non-streaming clients via the existing forced-SSE path.
     forceStream: true,
     headers: {
-      "x-opencode-client": "cli",
+      "x-opencode-client": "desktop",
     },
     forceStream: true,
     noAuth: true,
@@ -39,8 +39,8 @@ export default {
   systemoneConfig: {
     baseUrl: "https://opencode.ai/zen/v1/systemone",
     headers: {
-      "x-opencode-client": "cli",
-      "User-Agent": "opencode/1.18.35",
+      "x-opencode-client": "desktop",
+      "User-Agent": "opencode/2.0.28",
     },
   },
   modelsFetcher: { url: "https://opencode.ai/zen/v1/models", type: "opencode-free" },
