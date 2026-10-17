@@ -85,13 +85,14 @@ function hasValidOpencodeVersion(ua) {
   const minor = parseInt(m[2], 10);
   return major >= 2 || (major === 1 && minor >= 17);
 }
-// Models served by /zen/v1/responses; every other model stays on /chat/completions.
+// Models served by /inference/v1/responses; every other model stays on
+// /chat/completions. Muse Spark ids are also matched by isMuseSparkModel, so
+// future variants keep routing here even when absent from this set.
 const RESPONSES_MODELS = new Set([
   "muse-spark-1.2-contributor-free",
-  "muse-spark-1.3-contributor-free",
 ]);
 
-// Models served by /zen/v1/messages (Anthropic Messages API).
+// Models served by /inference/v1/messages (Anthropic Messages API).
 const MESSAGES_MODELS = new Set([
   "union-alpha",
 ]);

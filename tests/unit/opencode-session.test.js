@@ -141,7 +141,7 @@ describe("OpenCode Free Executor Session Resolution", () => {
     const executor = getExecutor("opencode");
     const credentials = makeCredentials();
     const result = await executor.execute({
-      model: "muse-spark-1.3-contributor-free",
+      model: "muse-spark-1.2-contributor-free",
       body: { input: [{ type: "message", role: "user", content: [{ type: "input_text", text: "hello" }] }] },
       stream: false,
       credentials,
@@ -165,7 +165,7 @@ describe("OpenCode Free Executor Session Resolution", () => {
   });
   it("handles null or undefined body gracefully in transformRequest", () => {
     const executor = getExecutor("opencode");
-    expect(() => executor.transformRequest("muse-spark-1.3-contributor-free", null, false, {})).not.toThrow();
+    expect(() => executor.transformRequest("muse-spark-1.2-contributor-free", null, false, {})).not.toThrow();
     expect(() => executor.transformRequest("big-pickle", undefined, false, {})).not.toThrow();
   });
 });
@@ -252,7 +252,7 @@ describe("OpenCode Free Upstream Gates (stream + tool fingerprint)", () => {
   it("injects the fingerprint into Responses bodies and keeps stream/store gates", () => {
     const executor = getExecutor("opencode");
     const out = executor.transformRequest(
-      "muse-spark-1.3-contributor-free",
+      "muse-spark-1.2-contributor-free",
       { input: [{ type: "message", role: "user", content: [{ type: "input_text", text: "hi" }] }] },
       false,
       { rawHeaders: {} },

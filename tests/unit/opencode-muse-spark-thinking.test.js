@@ -19,8 +19,9 @@ const input = [{
 describe("OpenCode Free Muse Spark thinking", () => {
   it("advertises reasoning and the requested model limits", () => {
     expect(PROVIDER_MODELS.oc?.some((model) => model.id === MODEL)).toBe(true);
-    expect(PROVIDER_MODELS.oc?.some((model) => model.id === "muse-spark-1.3-contributor-free")).toBe(true);
-    for (const m of [MODEL, "muse-spark-1.3-contributor-free", "muse-spark-1.4-contributor-free", "muse-spark-2.0-contributor-free"]) {
+    // Retired free variant (410 upstream) must not be advertised any more.
+    expect(PROVIDER_MODELS.oc?.some((model) => model.id === "muse-spark-1.3-contributor-free")).toBe(false);
+    for (const m of [MODEL, "muse-spark-1.4-contributor-free", "muse-spark-2.0-contributor-free"]) {
       expect(getCapabilitiesForModel(PROVIDER, m)).toMatchObject({
         reasoning: true,
         thinkingFormat: "openai",
@@ -131,11 +132,11 @@ describe("OpenCode Free Muse Spark thinking", () => {
     expect(out.max_tokens).toBeUndefined();
   });
 
-  it("routes muse-spark-1.3-contributor-free and future Muse Spark models to Responses API", () => {
+  it("routes current and future Muse Spark models to the Responses API", () => {
     const executor = new OpenCodeExecutor();
     const futureModel = "muse-spark-1.4-contributor-free";
 
-    for (const m of ["muse-spark-1.3-contributor-free", futureModel]) {
+    for (const m of [MODEL, futureModel]) {
       expect(executor.buildUrl(m)).toBe("https://opencode.ai/inference/v1/responses");
       expect(executor.buildUrl(`${m}(high)`)).toBe("https://opencode.ai/inference/v1/responses");
       expect(getModelTargetFormat("oc", m)).toBe("openai-responses");
@@ -157,7 +158,7 @@ describe("OpenCode Free Muse Spark thinking", () => {
         PROVIDER,
       );
       const out = executor.transformRequest(m, translated, true, {
-        connectionId: "opencode-muse-spark-13-test",
+        connectionId: "opencode-muse-spark-free-test",
       });
 
       expect(out.reasoning).toEqual({ effort: "high", summary: "auto" });
@@ -168,7 +169,7 @@ describe("OpenCode Free Muse Spark thinking", () => {
 
   it("strips prior-turn reasoning items carrying encrypted_content from input", () => {
     const executor = new OpenCodeExecutor();
-    const model = "muse-spark-1.3-contributor-free";
+    const model = MODEL;
     const body = {
       model,
       input: [
