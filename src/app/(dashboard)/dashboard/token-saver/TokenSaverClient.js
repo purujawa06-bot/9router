@@ -15,6 +15,8 @@ export default function TokenSaverClient() {
   const [cavemanLevel, setCavemanLevel] = useState("full");
   const [ponytailEnabled, setPonytailEnabled] = useState(false);
   const [ponytailLevel, setPonytailLevel] = useState("full");
+  const [customPromptEnabled, setCustomPromptEnabled] = useState(false);
+  const [customPrompt, setCustomPrompt] = useState("");
   const [noMediaEnabled, setNoMediaEnabled] = useState(false);
   const [pxpipeEnabled, setPxpipeEnabled] = useState(false);
   const [pxpipeMinChars, setPxpipeMinChars] = useState(25000);
@@ -94,6 +96,15 @@ export default function TokenSaverClient() {
     patchSetting({ ponytailLevel: level });
   };
 
+  const handleCustomPromptEnabled = (value) => {
+    setCustomPromptEnabled(value);
+    patchSetting({ customPromptEnabled: value });
+  };
+
+  const handleCustomPromptBlur = () => {
+    patchSetting({ customPrompt });
+  };
+
   const handleNoMediaEnabled = (value) => {
     setNoMediaEnabled(value);
     patchSetting({ noMediaEnabled: value });
@@ -163,6 +174,8 @@ export default function TokenSaverClient() {
           setCavemanLevel(data.cavemanLevel || "full");
           setPonytailEnabled(!!data.ponytailEnabled);
           setPonytailLevel(data.ponytailLevel || "full");
+          setCustomPromptEnabled(!!data.customPromptEnabled);
+          setCustomPrompt(data.customPrompt || "");
           setNoMediaEnabled(!!data.noMediaEnabled);
           setPxpipeEnabled(!!data.pxpipeEnabled);
           if (typeof data.pxpipeMinChars === "number") setPxpipeMinChars(data.pxpipeMinChars);

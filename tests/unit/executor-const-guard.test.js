@@ -39,9 +39,11 @@ describe("provider baseUrl const (full path, no trailing slash)", () => {
   });
 });
 
-describe("antigravity retry (intentional change: 429=6, 503=3)", () => {
-  it("429 attempts = 6", () => {
-    expect(antigravity.transport.retry["429"].attempts).toBe(6);
+// 429 was 6 after the June registry migration; the maintainer lowered it to 3 in
+// 3f9382de ("Fix AG, Kiro, Xiaomi Provider"); it has been 3 since.
+describe("antigravity retry (429=3, 503=3)", () => {
+  it("429 attempts = 3", () => {
+    expect(antigravity.transport.retry["429"].attempts).toBe(3);
   });
   it("503 attempts = 3", () => {
     expect(antigravity.transport.retry["503"].attempts).toBe(3);
@@ -64,8 +66,7 @@ describe("OpenCode Free endpoint routing", () => {
     const executor = new OpenCodeExecutor();
     expect(executor.buildUrl(MUSE)).toBe("https://opencode.ai/inference/v1/responses");
     expect(executor.buildUrl(`${MUSE}(xhigh)`)).toBe("https://opencode.ai/inference/v1/responses");
-    // Unknown/future Muse Spark ids still resolve to the Responses lane via the
-    // family matcher, even though they are not curated in the registry.
+    expect(executor.buildUrl("muse-spark-1.3-contributor-free")).toBe("https://opencode.ai/inference/v1/responses");
     expect(executor.buildUrl("muse-spark-1.4-contributor-free")).toBe("https://opencode.ai/inference/v1/responses");
     expect(executor.buildUrl("muse-spark-2.0-contributor-free(xhigh)")).toBe("https://opencode.ai/inference/v1/responses");
     expect(executor.buildUrl("big-pickle")).toBe("https://opencode.ai/inference/v1/chat/completions");

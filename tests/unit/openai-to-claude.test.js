@@ -175,6 +175,9 @@ describe("openaiToClaudeResponse", () => {
       id: "chatcmpl-test",
       model: "gpt-test",
       choices: [{
+        // Tool args are buffered and sanitized at finish, so the delta is
+        // emitted with the terminal chunk (see openaiToClaudeResponse).
+        finish_reason: "tool_calls",
         delta: {
           tool_calls: [{
             index: 0,

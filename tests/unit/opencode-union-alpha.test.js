@@ -35,7 +35,7 @@ describe("OpenCode Free union-alpha integration", () => {
     expect(headers["Authorization"]).toBe("Bearer public");
     expect(headers).not.toHaveProperty("x-api-key");
     expect(headers["anthropic-version"]).toBe("2023-06-01");
-    expect(headers["x-opencode-client"]).toBe("desktop");
+    expect(headers["x-opencode-client"]).toBe("cli");
     expect(headers["x-opencode-session"]).toMatch(/^ses_[0-9a-f]{12}[0-9A-Za-z]{14}$/);
     expect(headers["x-opencode-session-id"]).toBe(headers["x-opencode-session"]);
     expect(headers["x-opencode-project"]).toBe("global");

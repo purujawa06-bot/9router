@@ -15,6 +15,10 @@ export default defineConfig({
     exclude: ["**/node_modules/**", "**/.claude/**", "**/dist/**"],
     // Allow many it.concurrent cases (real provider smoke runs ~50 providers in parallel)
     maxConcurrency: 60,
+    // Several suites import the full app graph and touch the filesystem; 5s
+    // (vitest default) is too tight on cold Windows/CI runs.
+    testTimeout: 20000,
+    hookTimeout: 20000,
     // Suppress noisy console output from handlers under test
     silent: false,
   },

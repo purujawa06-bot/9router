@@ -72,6 +72,12 @@ docker rm -f 9router
 # re-run the quick start command
 ```
 
+To pin a specific version instead of following `latest`, use a numbered image tag:
+
+```bash
+docker pull decolua/9router:0.5.81
+```
+
 ---
 
 # 🛠 For Developers
@@ -79,12 +85,21 @@ docker rm -f 9router
 ## Build image locally (test)
 
 ```bash
-cd app && docker build -t 9router .
+docker build -t 9router .
 
 docker run --rm -p 20128:20128 \
   -v "$HOME/.9router:/app/data" \
   -e DATA_DIR=/app/data \
   9router
+```
+
+The Dockerfile uses the official Alpine and npm registries by default. Regional mirrors can be supplied when needed:
+
+```bash
+docker build \
+  --build-arg ALPINE_MIRROR=mirrors.aliyun.com \
+  --build-arg NPM_REGISTRY=https://registry.npmmirror.com/ \
+  -t 9router .
 ```
 
 ## Publish (automatic via CI)
@@ -99,7 +114,7 @@ No extra secrets needed — authentication uses the built-in `GITHUB_TOKEN`.
 node scripts/release.js "Release title" "Notes"
 
 # Or manually
-git tag v0.4.x && git push origin v0.4.x
+git tag v0.5.81 && git push origin v0.5.81
 ```
 
 Workflow: `.github/workflows/docker-publish.yml`

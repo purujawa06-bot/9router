@@ -6,6 +6,8 @@ import { getThinkingLevels } from "../providers/thinkingLevels.js";
 import { injectReasoningContent } from "../utils/reasoningContentInjector.js";
 import { resolveSessionId } from "../utils/sessionManager.js";
 import { isMuseSparkModel } from "../providers/models/helpers.js";
+import { applyFingerprintTools } from "../utils/opencodeFingerprint.js";
+import { ANTHROPIC_API_VERSION } from "../providers/shared.js";
 import {
   normalizeResponsesInput,
   clampResponsesCallId,
@@ -13,89 +15,27 @@ import {
   coerceResponsesOutput,
 } from "../translator/formats/responsesApi.js";
 
-const OPENCODE_UA = "opencode/latest/2.0.29/cli";
-const MAX_TOOL_NAME_LEN = 128;
+// OpenCode v2 UA shape: opencode/<channel>/<version>/<client>. Upstream rejects
+// the v1 "opencode/1.18.x" form with 403 FreeTierError since 2026-10-14.
+const OPENCODE_UA = "opencode/latest/2.0.26/cli";
+const OPENCODE_CLIENT = "cli";
 const MAX_SESSION_LENGTH = 256;
+const MAX_TOOL_NAME_LEN = 128;
 const SESSION_HEADER = "x-opencode-session";
 const SESSION_FIELD = "_opencodeSession";
 export const OPENCODE_SESSION_RE = /^ses_[0-9a-f]{12}[0-9A-Za-z]{14}$/;
-export const OPENCODE_REQUEST_RE = /^msg_[0-9a-f]{12}[0-9A-Za-z]{14}$/;
 const BASE62_CHARS = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
-// Cache for translated downstream identities: each key maps to one
-// timestamp-based ses_ id so repeats are stable and the time component stays
-// plausible (upstream rejects hash-derived timestamps with 403 FreeTierError).
-const translatedSessionCache = new Map();
-const MAX_TRANSLATED_SESSIONS = 5000;
-const translatedRequestCache = new Map();
-const MAX_TRANSLATED_REQUESTS = 5000;
-// Upstream free-tier gate (verified live 2026-10-14, after the v2 migration):
-// /inference/v1/chat/completions and /inference/v1/responses reject requests
-// that do not look like the official OpenCode v2 agentic client. Concretely enforced:
-// - endpoint must be /inference/v1/... (/zen/v1/... 403s, even for the real CLI);
-// - User-Agent must be the v2 channel form opencode/<channel>/<version>/<client>;
-// - no x-api-key header (it poisons the request into 403; Bearer public is enough);
-// - tools must include OpenCode's own read and shell declarations with their
-//   official descriptions/parameters (stub text is rejected);
-// - stream must be true (stream:false → 403 FreeTierError);
-// - never inject x-opencode-request (rejected); forward it only if downstream sent one.
-// Missing-tool requests are the common 9router case: plain chat callers send
-// no tools, so without injection every such request 403s.
-// Official OpenCode tool definitions (captured from the v2 client): the gate
-// validates descriptions/parameters, so stub text is rejected upstream.
-const OPENCODE_FINGERPRINT_TOOLS = ["read", "shell"];
-const OPENCODE_CANONICAL_TOOL_DEFINITIONS = {
-  read: {
-    description: "Read the contents of a file or directory. Supports text files, images, and PDFs. Images and PDFs are presented directly to the model. Each text line is prefixed by its 1-based line number as <line>: <content>. The prefix is for reference and is not part of the file content. Directory entries are returned one per line. Use offset and limit to read large files or directories in sections. Prefer one larger read over many small slices, and use grep to find specific content in large files.",
-    parameters: {
-      type: "object",
-      properties: {
-        path: { type: "string", description: "File or directory to read" },
-      },
-      required: ["path"],
-    },
-  },
-  shell: {
-    description: "Execute a shell command and return its output. Commands run on Windows using pwsh. Quote file paths containing spaces with double quotes. Prefer dedicated tools over shell commands when possible. When output is large, the full result is saved to a file and a truncated preview is returned. Rely on automatic truncation unless filtering the output is more useful. Commands accept an optional timeout, background commands have no timeout by default. Background commands return immediately, and you will be notified when they complete.",
-    parameters: {
-      type: "object",
-      properties: {
-        command: { type: "string", description: "Shell command string to execute" },
-      },
-      required: ["command"],
-    },
-  },
-};
-
-// Canonical fingerprint name for a caller tool (bash is OpenCode's shell under
-// another name); "" when the tool is outside the fingerprint contract.
-function fingerprintToolKey(name) {
-  const lower = String(name ?? "").trim().toLowerCase();
-  if (lower === "bash" || lower === "shell") return "shell";
-  if (lower === "read") return "read";
-  return "";
-}
 
 function hasValidOpencodeVersion(ua) {
-  if (!ua || typeof ua !== "string") return false;
-  // Strictly match the OpenCode version tag (opencode/latest/2.0.29/cli or
-  // opencode/1.18.x) so generic browser tokens like Mozilla/5.0 never match.
-  const m = ua.match(/\bopencode\/(?:(?:latest|stable|preview|dev|beta|[a-zA-Z0-9._-]+)\/)?(\d+)\.(\d+)(?:\.(\d+))?/i);
-  if (!m) return false;
-  const major = parseInt(m[1], 10);
-  const minor = parseInt(m[2], 10);
-  return major >= 2 || (major === 1 && minor >= 17);
+  const m = String(ua || "").match(/^opencode\/[a-z0-9-]+\/(\d+)\.\d+\.\d+\/[a-z0-9-]+$/i);
+  return !!m && parseInt(m[1], 10) >= 2;
 }
-// Models served by /inference/v1/responses; every other model stays on
-// /chat/completions. Muse Spark ids are also matched by isMuseSparkModel, so
-// future variants keep routing here even when absent from this set.
+// Models served by /inference/v1/responses; every other model stays on /chat/completions.
 const RESPONSES_MODELS = new Set([
   "muse-spark-1.2-contributor-free",
+  "muse-spark-1.3-contributor-free",
 ]);
-
-// Models served by /inference/v1/messages (Anthropic Messages API).
-const MESSAGES_MODELS = new Set([
-  "union-alpha",
-]);
+const MESSAGES_MODELS = new Set(["union-alpha"]);
 
 let lastTimestamp = 0;
 let counter = 0;
@@ -109,57 +49,43 @@ function unstableRandom() {
   return randomPart;
 }
 
+// Session prefix = 12 hex of ~(timeMs * 0x1000 + counter), low 48 bits, like the CLI.
+// Upstream decodes it and rejects a non-small counter with 403 FreeTierError
+// (live probes: counter 0–16 pass, >=100 fail), so the counter must stay real.
+const SESSION_PREFIX_MASK = (1n << 48n) - 1n;
+const SESSION_TIME_MASK = (1n << 36n) - 1n;
+
+function descendingTimeHex(time, counterValue) {
+  return (~(BigInt(time) * 0x1000n + BigInt(counterValue)) & SESSION_PREFIX_MASK)
+    .toString(16)
+    .padStart(12, "0");
+}
+
 export function generateSessionId(timestamp = Date.now()) {
   if (timestamp !== lastTimestamp) {
     lastTimestamp = timestamp;
     counter = 0;
   }
   counter++;
-
-  const current = BigInt(timestamp) * 0x1000n + BigInt(counter);
-  const value = ~current;
-  const time = Array.from({ length: 6 }, (_, index) =>
-    Number((value >> BigInt(40 - 8 * index)) & 0xffn)
-      .toString(16)
-      .padStart(2, "0")
-  ).join("");
-  return `ses_${time}${unstableRandom()}`;
-}
-
-export function generateRequestId(timestamp = Date.now()) {
-  const current = BigInt(timestamp) * 0x1000n + 1n;
-  const value = current;
-  const time = Array.from({ length: 6 }, (_, index) =>
-    Number((value >> BigInt(40 - 8 * index)) & 0xffn)
-      .toString(16)
-      .padStart(2, "0")
-  ).join("");
-  return `msg_${time}${unstableRandom()}`;
+  return `ses_${descendingTimeHex(timestamp, counter)}${unstableRandom()}`;
 }
 
 export function translateSessionId(sessionId, clientTool = "") {
   if (typeof sessionId === "string" && OPENCODE_SESSION_RE.test(sessionId.trim())) {
     return sessionId.trim();
   }
-  // Upstream validates the ses_ time component for plausibility (random hex
-  // decodes to an implausible date and 403s), so never hash bytes into the
-  // time slot. Map each downstream identity to one cached timestamp-based id.
-  const key = crypto
+  const digest = crypto
     .createHash("sha256")
     .update(`opencode\0${clientTool || "generic"}\0${sessionId || ""}`)
-    .digest("hex");
-  const cached = translatedSessionCache.get(key);
-  if (cached) {
-    translatedSessionCache.delete(key);
-    translatedSessionCache.set(key, cached);
-    return cached;
+    .digest();
+  // Deterministic time field from the digest, counter pinned to 1 (what the CLI sends).
+  const time = BigInt(`0x${digest.subarray(0, 5).toString("hex")}`) & SESSION_TIME_MASK;
+  const timeHex = descendingTimeHex(time, 1);
+  let randomPart = "";
+  for (let i = 6; i < 20; i++) {
+    randomPart += BASE62_CHARS[digest[i] % 62];
   }
-  const fresh = generateSessionId();
-  if (translatedSessionCache.size >= MAX_TRANSLATED_SESSIONS) {
-    translatedSessionCache.delete(translatedSessionCache.keys().next().value);
-  }
-  translatedSessionCache.set(key, fresh);
-  return fresh;
+  return `ses_${timeHex}${randomPart}`;
 }
 
 function normalizeSession(value) {
@@ -227,67 +153,6 @@ export function stableSessionId(credentials) {
   return sessionId;
 }
 
-function lastUserText(body) {
-  try {
-    if (!body || typeof body !== "object") return "";
-    const arr = Array.isArray(body.messages)
-      ? body.messages
-      : Array.isArray(body.input)
-        ? body.input
-        : null;
-    if (!arr) return typeof body.input === "string" ? body.input.slice(-600) : "";
-    for (let i = arr.length - 1; i >= 0; i--) {
-      const msg = arr[i];
-      if (!msg) continue;
-      if (msg.role && msg.role !== "user") continue;
-      const content = msg.content;
-      if (typeof content === "string" && content.trim()) return content.trim().slice(-600);
-      if (Array.isArray(content)) {
-        const text = content
-          .map((part) => (typeof part === "string" ? part : part?.text || part?.input_text || ""))
-          .join(" ")
-          .trim();
-        if (text) return text.slice(-600);
-      }
-    }
-  } catch {
-    return "";
-  }
-  return "";
-}
-
-// The real CLI sends the current user message id (stable per turn, same on
-// retries) as x-opencode-request. Map each session+message to one cached
-// timestamp-based msg_ id so retries share the id and the time component
-// stays plausible (hash-derived timestamps 403 like sessions do).
-export function deriveRequestId(sessionId, body) {
-  const text = lastUserText(body);
-  if (!text) return generateRequestId();
-  const key = crypto
-    .createHash("sha256")
-    .update(`opencode-req\0${sessionId || ""}\0${text}`)
-    .digest("hex");
-  const cached = translatedRequestCache.get(key);
-  if (cached) {
-    translatedRequestCache.delete(key);
-    translatedRequestCache.set(key, cached);
-    return cached;
-  }
-  const fresh = generateRequestId();
-  if (translatedRequestCache.size >= MAX_TRANSLATED_REQUESTS) {
-    translatedRequestCache.delete(translatedRequestCache.keys().next().value);
-  }
-  translatedRequestCache.set(key, fresh);
-  return OPENCODE_REQUEST_RE.test(fresh) ? fresh : generateRequestId();
-}
-
-function normalizeRequestId(value) {
-  if (typeof value !== "string") return null;
-  const normalized = value.trim();
-  if (!normalized || normalized.length > MAX_SESSION_LENGTH) return null;
-  return OPENCODE_REQUEST_RE.test(normalized) ? normalized : null;
-}
-
 function bodyHasSessionHints(body) {
   try {
     if (!body || typeof body !== "object") return false;
@@ -331,8 +196,7 @@ function isResponsesModel(model) {
 }
 
 function isMessagesModel(model) {
-  const base = baseModelId(model);
-  return MESSAGES_MODELS.has(base);
+  return MESSAGES_MODELS.has(baseModelId(model));
 }
 
 function resolveOpencodeSession(body, credentials, providerSessionId, clientTool) {
@@ -398,69 +262,6 @@ function normalizeResponsesTools(body) {
     }
   }
 }
-function toolNameOf(tool) {
-  if (!tool || typeof tool !== "object" || Array.isArray(tool)) return "";
-  const fn = tool.function && typeof tool.function === "object" && !Array.isArray(tool.function) ? tool.function : null;
-  const raw = typeof tool.name === "string" ? tool.name : (typeof fn?.name === "string" ? fn.name : "");
-  return raw.trim();
-}
-
-// Merge the upstream-mandated read/shell declarations into Chat Completions
-// bodies. Caller tools are preserved verbatim; only the missing fingerprint
-// names are appended with their official definitions, which the model ignores
-// when the caller never invokes them.
-function ensureChatFingerprintTools(body) {
-  if (!body || typeof body !== "object") return;
-  const present = new Set();
-  if (Array.isArray(body.tools)) {
-    for (const tool of body.tools) {
-      const key = fingerprintToolKey(toolNameOf(tool));
-      if (key) present.add(key);
-    }
-  } else {
-    body.tools = [];
-  }
-  for (const name of OPENCODE_FINGERPRINT_TOOLS) {
-    if (present.has(name)) continue;
-    const definition = OPENCODE_CANONICAL_TOOL_DEFINITIONS[name];
-    body.tools.push({
-      type: "function",
-      function: {
-        name,
-        description: definition.description,
-        parameters: definition.parameters,
-      },
-    });
-    present.add(name);
-  }
-}
-
-// Same fingerprint for the Responses flat tool shape. Runs before
-// normalizeResponsesTools so injected declarations get the same coercion as
-// caller tools.
-function ensureResponsesFingerprintTools(body) {
-  if (!body || typeof body !== "object") return;
-  const present = new Set();
-  if (Array.isArray(body.tools)) {
-    for (const tool of body.tools) {
-      const key = fingerprintToolKey(toolNameOf(tool));
-      if (key) present.add(key);
-    }
-  } else {
-    body.tools = [];
-  }
-  for (const name of OPENCODE_FINGERPRINT_TOOLS) {
-    if (present.has(name)) continue;
-    const definition = OPENCODE_CANONICAL_TOOL_DEFINITIONS[name];
-    body.tools.push({
-      type: "function",
-      name,
-      description: definition.description,
-      parameters: definition.parameters,
-    });
-    present.add(name);
-  }
-}
 
 function sanitizeResponsesItems(body) {
   if (!Array.isArray(body.input)) return;
@@ -518,6 +319,16 @@ function normalizeOpencodeReasoning(model, body) {
   delete body.reasoning_effort;
 }
 
+// Chat Completions lane: the free backend validates reasoning_effort against the
+// plain OpenAI enum (none|minimal|low|medium|high|xhigh|max) and answers 400
+// "Invalid option" for anything else — including "auto", which adaptive thinking
+// (Claude Code's thinking:{type:"adaptive"}) arrives as. Omitting the field lets
+// the upstream pick its own default, which is what adaptive means; same rationale
+// as the Responses path above, which rejects "unknown variant `auto`".
+function dropAdaptiveReasoningEffort(body) {
+  if (body?.reasoning_effort === "auto") delete body.reasoning_effort;
+}
+
 export class OpenCodeExecutor extends BaseExecutor {
   constructor() {
     super("opencode", PROVIDERS.opencode);
@@ -535,13 +346,9 @@ export class OpenCodeExecutor extends BaseExecutor {
 
   transformRequest(model, body, stream, credentials) {
     if (body && typeof body === "object" && model && !body.model) body.model = model;
-    if (body && typeof body === "object") {
-      // Upstream rejects non-streaming free-tier requests with 403 even when
-      // everything else is valid. chatCore already forces SSE for
-      // forceStream providers and converts back for non-stream clients, so
-      // always send stream:true upstream here.
-      body.stream = true;
-    }
+    // Zen rejects non-streaming requests on free models with 403 FreeTierError;
+    // always stream upstream and let the handler layer aggregate for non-stream clients.
+    if (body && typeof body === "object") body.stream = true;
     if (isResponsesModel(model || body?.model) && body && typeof body === "object") {
       // ponytail: chỉ model đã xác nhận auto-only; mở allowlist khi có bằng chứng.
       if ("tool_choice" in body && body.tool_choice !== "auto"
@@ -562,16 +369,17 @@ export class OpenCodeExecutor extends BaseExecutor {
       delete body.max_tokens;
       delete body.max_completion_tokens;
       normalizeOpencodeReasoning(model, body);
+      body.stream = true;
       body.store = false;
-      ensureResponsesFingerprintTools(body);
       normalizeResponsesTools(body);
       sanitizeResponsesItems(body);
-    } else if (isMessagesModel(model || body?.model)) {
-      if (!body.max_tokens && !body.max_output_tokens) {
-        body.max_tokens = 4096;
-      }
+      // Free-tier fingerprint tools are required even when an agent client
+      // already supplied tools. ZCode/Claude Code requests normally have
+      // non-empty tool arrays; skipping cloaking here triggers 403 FreeTierError.
+      applyFingerprintTools(body, true);
     } else if (body && typeof body === "object") {
-      ensureChatFingerprintTools(body);
+      dropAdaptiveReasoningEffort(body);
+      applyFingerprintTools(body, false);
     }
     return injectReasoningContent({ provider: this.provider, model, body });
   }
@@ -580,50 +388,40 @@ export class OpenCodeExecutor extends BaseExecutor {
     return super.execute({ ...args, credentials: this.prepareRequestCredentials(args) });
   }
 
+  // Free tier moved from /zen/v1 to /inference/v1 (OpenCode v2); /zen/v1 now
+  // answers every free request with 403 FreeTierError.
   buildUrl(model) {
     const base = this.config.baseUrl;
-    if (isResponsesModel(model)) {
-      return `${base}/inference/v1/responses`;
-    }
-    if (isMessagesModel(model)) {
-      return `${base}/inference/v1/messages`;
-    }
+    if (isResponsesModel(model)) return `${base}/inference/v1/responses`;
+    if (isMessagesModel(model)) return `${base}/inference/v1/messages`;
     return `${base}/inference/v1/chat/completions`;
   }
 
-  buildHeaders(credentials, stream = true, url = "", model = "") {
+  buildHeaders(credentials, stream = true, url = "") {
     const raw = credentials?.rawHeaders || {};
     const lower = {};
     for (const [k, v] of Object.entries(raw)) lower[k.toLowerCase()] = v;
 
     const downstreamUa = lower["user-agent"] || "";
     const isOpencodeDownstream = hasValidOpencodeVersion(downstreamUa);
-    const isMessages = (url && url.endsWith("/messages")) || isMessagesModel(model);
 
-    const session = credentials?.[SESSION_FIELD] || this.prepareRequestCredentials({ credentials })[SESSION_FIELD] || generateSessionId();
-    const auth = credentials?.apiKey ? `Bearer ${credentials.apiKey}` : "Bearer public";
+    const session = credentials?.[SESSION_FIELD] || this.prepareRequestCredentials({ credentials })[SESSION_FIELD];
 
+    // Mirrors the v2 CLI. Upstream needs x-opencode-session-id next to
+    // x-opencode-session, and rejects any x-opencode-request (v1 only) with 403.
     const headers = {
       "Content-Type": "application/json",
-      "Authorization": auth,
+      "Authorization": "Bearer public",
       "User-Agent": isOpencodeDownstream ? downstreamUa : OPENCODE_UA,
-      "x-opencode-client": lower["x-opencode-client"] || "desktop",
+      "x-opencode-client": lower["x-opencode-client"] || OPENCODE_CLIENT,
       "x-opencode-session": session,
-      // The v2 gate reads the session under all four names with identical values.
       "x-opencode-session-id": session,
       "x-session-affinity": session,
       "x-session-id": session,
-      // Never inject x-opencode-request: upstream rejects it. Forward it only
-      // when the downstream client sent one (official clients do).
-      ...(normalizeRequestId(lower["x-opencode-request"]) ? { "x-opencode-request": lower["x-opencode-request"].trim() } : {}),
       "x-opencode-project": lower["x-opencode-project"] || "global",
       "Accept": stream ? "text/event-stream" : "*/*",
     };
-
-    if (isMessages) {
-      headers["anthropic-version"] = "2023-06-01";
-    }
-
+    if (url.endsWith("/messages")) headers["anthropic-version"] = ANTHROPIC_API_VERSION;
     return headers;
   }
 }

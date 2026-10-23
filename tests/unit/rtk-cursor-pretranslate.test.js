@@ -68,7 +68,7 @@ describe("token savers on Cursor (pre-translate RTK)", () => {
     });
   });
 
-  it("compresses role:tool git diffs before openai→cursor rewrite, then injects Caveman/Ponytail", async () => {
+  it("compresses role:tool git diffs before openai→cursor rewrite, then injects Headroom/Caveman/Ponytail", async () => {
     const diff = makeLongDiff();
     const log = { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), line: vi.fn() };
 

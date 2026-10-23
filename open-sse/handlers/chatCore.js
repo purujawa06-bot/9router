@@ -21,8 +21,10 @@ import { handleNonStreamingResponse } from "./chatCore/nonStreamingHandler.js";
 import { handleStreamingResponse, buildOnStreamComplete } from "./chatCore/streamingHandler.js";
 import { detectClientTool, isNativePassthrough } from "../utils/clientDetector.js";
 import { dedupeTools } from "../utils/toolDeduper.js";
+import { takeRenamedToolNames } from "../utils/opencodeFingerprint.js";
 import { injectCaveman } from "../rtk/caveman.js";
 import { injectPonytail } from "../rtk/ponytail.js";
+import { injectCustomPrompt } from "../rtk/customPrompt.js";
 import { compressMessages, formatRtkLog } from "../rtk/index.js";
 import { compressWithPxpipe } from "../rtk/pxpipe.js";
 import { getCapabilitiesForModel } from "../providers/capabilities.js";
@@ -58,7 +60,7 @@ export function stripContinuityFields(body) {
   return body;
 }
 
-export async function handleChatCore({ body, modelInfo, credentials, log, onCredentialsRefreshed, onRequestSuccess, onDisconnect, clientRawRequest, connectionId, userAgent, apiKey, ccFilterNaming, rtkEnabled, cavemanEnabled, cavemanLevel, ponytailEnabled, ponytailLevel, noMediaEnabled, pxpipeEnabled, pxpipeMinChars, pxpipeTimeoutMs, pxpipeTransform, onPxpipeEvent, sourceFormatOverride, providerThinking, providerOverrides }) {
+export async function handleChatCore({ body, modelInfo, credentials, log, onCredentialsRefreshed, onRequestSuccess, onDisconnect, clientRawRequest, connectionId, userAgent, apiKey, ccFilterNaming, rtkEnabled, cavemanEnabled, cavemanLevel, ponytailEnabled, ponytailLevel, customPromptEnabled, customPrompt, noMediaEnabled, pxpipeEnabled, pxpipeMinChars, pxpipeTimeoutMs, pxpipeTransform, onPxpipeEvent, sourceFormatOverride, providerThinking, providerOverrides }) {
   const { provider, model } = modelInfo;
   const requestStartTime = Date.now();
   // Stable per-session color so all lines of one CLI conversation share a tag
@@ -108,7 +110,6 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   const targetFormat = useTransport?.format || modelTargetFormat || getTargetFormat(provider, credentials);
   if (useTransport && credentials) credentials.runtimeTransport = useTransport;
   const stripList = getModelStrip(alias, model);
-  const upstreamModel = getModelUpstreamId(alias, model);
 
   // Inject provider-level thinking config override (only if client hasn't set)
   // on/off → extended type (body.thinking), none/low/medium/high → effort type (body.reasoning_effort)
@@ -123,6 +124,8 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
       body = { ...body, reasoning_effort: mode };
     }
   }
+
+  const upstreamModel = getModelUpstreamId(alias, model, body);
 
   // Per-request opt-out: client can bypass all token savers via header
   const tokenSaverEnabled = clientRawRequest?.headers?.[TOKEN_SAVER_HEADER]?.toLowerCase() !== "off";
@@ -300,6 +303,11 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     xf.push(`PONYTAIL:${ponytailLevel}`);
   }
 
+  // Custom prompt: user-authored instruction, independent of the savers above
+  if (customPromptEnabled && injectCustomPrompt(translatedBody, finalFormat, customPrompt)) {
+    xf.push(`CUSTOMPROMPT:${customPrompt.trim().length}c`);
+  }
+
   // PXPIPE: image bulky context (Claude-format bodies only), last saver before dispatch
   let pxpipeSummary = null;
   if (pxpipeEnabled) {
@@ -340,6 +348,10 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     connectionProxyUrl: credentials?.providerSpecificData?.connectionProxyUrl || "",
     connectionNoProxy: credentials?.providerSpecificData?.connectionNoProxy || "",
     vercelRelayUrl: credentials?.providerSpecificData?.vercelRelayUrl || "",
+    // Strict pools must never silently fall back to a direct connection —
+    // honored on the Cursor AgentService h2 path and in proxyFetch (#4333).
+    proxyPoolId: credentials?.providerSpecificData?.connectionProxyPoolId || null,
+    strictProxy: credentials?.providerSpecificData?.strictProxy === true,
   };
 
   if (proxyOptions.vercelRelayUrl) {
@@ -391,6 +403,10 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     providerHeaders = result.headers;
     finalBody = result.transformedBody;
     providerResponseFormat = result.responseFormat || targetFormat;
+    const renamedToolNames = takeRenamedToolNames(translatedBody);
+    if (renamedToolNames?.size) {
+      toolNameMap = new Map([...(toolNameMap || []), ...renamedToolNames]);
+    }
     reqLogger.logTargetRequest(providerUrl, providerHeaders, finalBody);
   } catch (error) {
     trackPendingRequest(model, provider, connectionId, false, true);

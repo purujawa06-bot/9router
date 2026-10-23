@@ -9,6 +9,7 @@ import { buildStreamErrorBytes } from "../../utils/streamHelpers.js";
 import { createErrorResult } from "../../utils/error.js";
 import { trackPendingRequest, appendRequestLog } from "@/lib/usageDb.js";
 import { peekUpstreamForContent, isBinaryContentType } from "./emptyStreamGuard.js";
+import { isNoRetryFinish } from "../../services/emptyFailover.js";
 import { buildRequestDetail, extractRequestConfig, saveUsageStats, formatDoneLine } from "./requestDetail.js";
 import { saveRequestDetail } from "@/lib/usageDb.js";
 import { SSE_HEADERS_CORS as SSE_HEADERS } from "../../utils/sseConstants.js";
@@ -42,7 +43,10 @@ function buildTransformStream({ provider, sourceFormat, targetFormat, userAgent,
     return createSSETransformStreamWithLogger(targetFormat, sourceFormat, provider, reqLogger, toolNameMap, model, connectionId, body, onStreamComplete, apiKey, customToolNames, credentials);
   }
 
-  return createPassthroughStreamWithLogger(provider, reqLogger, model, connectionId, body, onStreamComplete, apiKey);
+  // The passthrough path has no format translation, so the fingerprint's tool
+  // rename map (read -> read_client) has to be handed over explicitly —
+  // otherwise the client receives a call to a tool it never declared (#4986).
+  return createPassthroughStreamWithLogger(provider, reqLogger, model, connectionId, body, onStreamComplete, apiKey, toolNameMap);
 }
 
 /**
@@ -96,7 +100,9 @@ export async function handleStreamingResponse({ providerResponse, provider, mode
     } catch (e) {
       peek = null;
     }
-    if (!peek || peek.empty) {
+    // A content-filtered / safety-blocked stream is a real (empty) answer, not a
+    // transport failure: retrying would recur on every account or combo member.
+    if ((!peek || peek.empty) && !isNoRetryFinish(peek?.finishReason)) {
       const errMsg = `[${provider}/${model}] Upstream returned empty streaming response (done without content or tool calls)`;
       trackPendingRequest(model, provider, connectionId, false, true);
       appendRequestLog({ model, provider, connectionId, status: `FAILED ${HTTP_STATUS.BAD_GATEWAY}` }).catch(() => { });
@@ -115,7 +121,7 @@ export async function handleStreamingResponse({ providerResponse, provider, mode
       streamController?.handleError?.(new Error("upstream empty streaming response"));
       return createErrorResult(HTTP_STATUS.BAD_GATEWAY, errMsg);
     }
-    upstreamResponse = peek.response;
+    if (peek?.response) upstreamResponse = peek.response;
   }
 
   if (onRequestSuccess) {

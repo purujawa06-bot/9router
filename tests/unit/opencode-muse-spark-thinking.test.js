@@ -136,7 +136,7 @@ describe("OpenCode Free Muse Spark thinking", () => {
     const executor = new OpenCodeExecutor();
     const futureModel = "muse-spark-1.4-contributor-free";
 
-    for (const m of [MODEL, futureModel]) {
+    for (const m of ["muse-spark-1.3-contributor-free", futureModel]) {
       expect(executor.buildUrl(m)).toBe("https://opencode.ai/inference/v1/responses");
       expect(executor.buildUrl(`${m}(high)`)).toBe("https://opencode.ai/inference/v1/responses");
       expect(getModelTargetFormat("oc", m)).toBe("openai-responses");
@@ -169,7 +169,7 @@ describe("OpenCode Free Muse Spark thinking", () => {
 
   it("strips prior-turn reasoning items carrying encrypted_content from input", () => {
     const executor = new OpenCodeExecutor();
-    const model = MODEL;
+    const model = "muse-spark-1.3-contributor-free";
     const body = {
       model,
       input: [
@@ -215,26 +215,18 @@ describe("OpenCode Free Muse Spark thinking", () => {
     // User message, function_call, function_call_output, and next user message survive
     const types = out.input.map((item) => item.type);
     expect(types).toEqual(["message", "function_call", "function_call_output", "message"]);
-    // Tools flattened and empty properties added; the upstream-mandated
-    // read/shell pair is merged in so free-tier requests pass the gate.
-    // The caller already declares shell, so only canonical read is appended.
-    expect(out.tools).toEqual([
+    // Tools flattened and empty properties added. The caller's own `shell` clashes
+    // with OpenCode's fingerprint tool, so it (and its prior call) travel under an
+    // alias while the exact read/shell definitions are appended.
+    expect(out.tools.slice(0, 1)).toEqual([
       {
         type: "function",
-        name: "shell",
+        name: "shell_client",
         description: "Run shell command",
         parameters: { type: "object", properties: {} },
       },
-      {
-        type: "function",
-        name: "read",
-        description: expect.stringContaining("Read the contents of a file or directory"),
-        parameters: {
-          type: "object",
-          properties: { path: { type: "string", description: "File or directory to read" } },
-          required: ["path"],
-        },
-      },
     ]);
+    expect(out.tools.map((t) => t.name)).toEqual(["shell_client", "read", "shell"]);
+    expect(out.input.find((item) => item.type === "function_call").name).toBe("shell_client");
   });
 });

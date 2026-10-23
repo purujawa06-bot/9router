@@ -145,6 +145,10 @@ export async function peekUpstreamForContent(providerResponse, opts = {}) {
   const translate = needsTranslation(targetFormat, sourceFormat);
   const isResponsesUpstream = targetFormat === FORMATS.OPENAI_RESPONSES;
 
+  // Finish reasons that legitimately carry no content (safety blocks, recitation).
+  // The caller must NOT turn those into a 502: retrying would recur on every
+  // candidate and mask the provider's real answer.
+  let finishReason = null;
   const checkLine = (trimmed) => {
     if (!trimmed) return false;
     if (trimmed.startsWith("event:")) {
@@ -153,6 +157,12 @@ export async function peekUpstreamForContent(providerResponse, opts = {}) {
     }
     const parsed = parseSSELine(trimmed, targetFormat);
     if (!parsed) return false;
+    const finish = parsed?.choices?.[0]?.finish_reason
+      || parsed?.stop_reason
+      || parsed?.response?.incomplete_details?.reason
+      || parsed?.incomplete_details?.reason
+      || null;
+    if (finish) finishReason = finish;
     // SSE sentinel — not content. Ollama's done:true IS the final chunk,
     // but it carries finish_reason/usage, never content, so it can't make
     // an otherwise-empty stream meaningful either.
@@ -209,8 +219,9 @@ export async function peekUpstreamForContent(providerResponse, opts = {}) {
             }
           } catch { /* probe must never throw */ }
         }
-        try { await reader.cancel(); } catch { /* already closed */ }
-        return { empty: true };
+        // Replay the buffered bytes even when the stream is "empty": a
+        // terminal frame (finish_reason/stop_reason) must still reach the client.
+        return replay(buffered, reader, providerResponse, { empty: true, finishReason });
       }
       textBuf += decoder.decode(value, { stream: true });
       const lines = textBuf.split("\n");
@@ -225,13 +236,13 @@ export async function peekUpstreamForContent(providerResponse, opts = {}) {
     // Read error mid-peek: if we already saw content, replay what we have;
     // otherwise report empty so the caller falls through to the next model.
     try { await reader.cancel(); } catch { /* ignore */ }
-    return { empty: true };
+    return { empty: true, finishReason };
   }
 
   return replay(buffered, reader, providerResponse);
 }
 
-function replay(buffered, reader, providerResponse) {
+function replay(buffered, reader, providerResponse, extra = {}) {
   const replayStream = new ReadableStream({
     start(controller) {
       for (const chunk of buffered) controller.enqueue(chunk);
@@ -255,6 +266,7 @@ function replay(buffered, reader, providerResponse) {
   } catch { /* ignore */ }
   return {
     empty: false,
+    ...extra,
     response: new Response(replayStream, {
       status: providerResponse.status,
       statusText: providerResponse.statusText,
@@ -273,6 +285,7 @@ export function isEmptyNonStreamingBody(translatedResponse, sourceFormat) {
   // OpenAI chat completion
   const choice = r.choices?.[0];
   if (choice) {
+    if (String(choice.finish_reason || "").toLowerCase() === "content_filter") return false;
     const msg = choice.message || {};
     if (isNonEmptyString(msg.content)) return false;
     if (isNonEmptyString(msg.reasoning_content)) return false;
@@ -283,6 +296,7 @@ export function isEmptyNonStreamingBody(translatedResponse, sourceFormat) {
 
   // Claude message
   if (sourceFormat === FORMATS.CLAUDE && r.type === "message" && Array.isArray(r.content)) {
+    if (String(r.stop_reason || "").toLowerCase() === "refusal") return false;
     for (const b of r.content) {
       if (b?.type === "text" && isNonEmptyString(b.text)) return false;
       if (b?.type === "thinking" && isNonEmptyString(b.thinking)) return false;
@@ -293,6 +307,7 @@ export function isEmptyNonStreamingBody(translatedResponse, sourceFormat) {
 
   // Responses API object
   if (r.object === "response" && Array.isArray(r.output)) {
+    if (String(r.incomplete_details?.reason || "").toLowerCase() === "content_filter") return false;
     for (const item of r.output) {
       if (item?.type === "message" && Array.isArray(item.content)) {
         for (const c of item.content) {

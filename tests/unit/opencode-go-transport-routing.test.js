@@ -95,9 +95,9 @@ const RESPONSE_BY_FORMAT = {
   },
 };
 
-async function route(model, sourceFormat) {
+async function route(model, sourceFormat, responseFormat = sourceFormat) {
   executeMock.mockResolvedValueOnce({
-    response: new Response(JSON.stringify(RESPONSE_BY_FORMAT[sourceFormat === "openai" ? "openai" : sourceFormat] || RESPONSE_BY_FORMAT.openai), {
+    response: new Response(JSON.stringify(RESPONSE_BY_FORMAT[responseFormat] || RESPONSE_BY_FORMAT.openai), {
       status: 200,
       headers: { "content-type": "application/json" },
     }),
@@ -172,4 +172,21 @@ describe("opencode-go thinking-suffix guard (regression)", () => {
     expect(result.success).toBe(true);
     expect(runtimeTransport).toBeNull();
   });
+});
+
+// claude-haiku-5-5 is /messages-only upstream: /chat/completions answers
+// "ModelProtocolUnsupported". Every client wire must therefore land on /messages —
+// claude directly, openai/responses through the declared targetFormat fallback.
+describe("opencode-go claude-haiku-5-5 is pinned to /messages for every client wire", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  for (const fmt of ["claude", "openai", "openai-responses"]) {
+    it(`routes a ${fmt}-format client to ${ENDPOINTS.claude}`, async () => {
+      const { result, runtimeTransport } = await route("claude-haiku-5-5", fmt, "claude");
+      expect(result.success).toBe(true);
+      expect(runtimeTransport?.baseUrl).toBe(ENDPOINTS.claude);
+    });
+  }
 });
