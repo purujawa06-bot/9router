@@ -867,10 +867,14 @@ async function testApiKeyConnection(connection, effectiveProxy = null) {
         return { valid, error: valid ? null : "Session expired — re-paste cookie" };
       }
       case "opencode": {
-        const res = await fetchWithConnectionProxy("https://opencode.ai/zen/v1/models", {
-          headers: { Authorization: "Bearer public", "User-Agent": "opencode/1.18.31" },
-        }, effectiveProxy);
-        return { valid: res.ok, error: res.ok ? null : "OpenCode free tier unavailable" };
+        // Free lane authenticates with "Bearer public": there is no secret to
+        // validate. The old /zen/v1/models probe sent the v1 "opencode/1.18.x"
+        // User-Agent (and no session headers) that upstream rejects with 403
+        // FreeTierError since 2026-10-14 — see open-sse/executors/opencode.js —
+        // so clicking Test sent the exact fingerprint real traffic avoids.
+        // Report valid without touching the network. A live probe may return
+        // later, but only via the executor's real header builder.
+        return { valid: true, error: null };
       }
       case "opencode-go": {
         const res = await fetchWithConnectionProxy("https://opencode.ai/zen/go/v1/chat/completions", {
