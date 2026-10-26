@@ -21,8 +21,10 @@ tiers, and fork branding.
 - **OpenCode Free**: UA/quirks aligned with the fingerprinted v2 CLI
   (`2.0.26`), `tool_choice` demotion kept for the retired 1.3 id.
 - **Ollama Local**: the `llama3.2:3b` default model is back in the registry.
+- **Codex Image**: drive the `image_generation` tool call from `gpt-6-sol` instead of the legacy `gpt-5.6-terra` host, and add `cx/gpt-6-sol-image`; drop the `gpt-5.6-{sol,terra,luna}-image` aliases they supersede
+- **Capabilities**: match `*gpt-6*image*` before the generic `gpt-6` family pattern so `gpt-6-sol-image` resolves as an image model instead of inheriting the chat caps (vision/reasoning/1.05M window) and losing `imageOutput`
 
-
+# v0.5.109 (2026-10-23)
 
 ## Features
 - **Combos**: add Smart Router (System One) evaluation with adaptive session stickiness (Smart Switch, Strict Lock, Per-Turn) to retain prompt cache; introduce SmartPolicyModal and System One router picker in dashboard (#4975)
