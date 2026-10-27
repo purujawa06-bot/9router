@@ -14,6 +14,11 @@ import {
   hasMalformedDeepSeekToolMarkup,
   buildToolConversationPrompt,
 } from "../translator/deepseekWebTools.js";
+import {
+  isAiSdkDeepSeekWebToolProfile,
+  formatDeepSeekWebToolPrompt,
+  parseDeepSeekWebAiSdkTools,
+} from "../translator/deepseekWebAiSdkTools.js";
 import { requestDeepSeekPowChallenge } from "./deepseek-web/pow.js";
 import {
   isThinkingModel,
@@ -800,13 +805,23 @@ export class DeepSeekWebExecutor extends BaseExecutor {
     // back into OpenAI tool_calls on the way out.
     const requestedTools = bodyObj.tools;
     const hasTools = Array.isArray(requestedTools) && requestedTools.length > 0;
-    const toolSystemPrompt = hasTools ? serializeDeepSeekToolPrompt(requestedTools) : "";
-
     const messages = Array.isArray(bodyObj.messages) ? bodyObj.messages : [];
+    const rawCreds = credentials ?? {};
+    const deepseekWebToolProfile = hasTools
+      ? (String(rawCreds?.providerSpecificData?.deepseekWebToolProtocol || rawCreds?.providerSpecificData?.deepseekWebToolProfile || "deepseek").trim() || "deepseek")
+      : "deepseek";
+    const useAiSdkToolProfile = hasTools && isAiSdkDeepSeekWebToolProfile(deepseekWebToolProfile);
+    let toolSystemPrompt = "";
+    if (hasTools) {
+      if (useAiSdkToolProfile) {
+        toolSystemPrompt = (await formatDeepSeekWebToolPrompt(deepseekWebToolProfile, requestedTools)) || serializeDeepSeekToolPrompt(requestedTools);
+      } else {
+        toolSystemPrompt = serializeDeepSeekToolPrompt(requestedTools);
+      }
+    }
     const promptMessages = toolSystemPrompt
       ? [{ role: "system", content: toolSystemPrompt }, ...messages]
       : messages;
-    const rawCreds = credentials ?? {};
 
     const userToken = extractUserToken(rawCreds);
     if (!userToken) {
@@ -1001,7 +1016,9 @@ export class DeepSeekWebExecutor extends BaseExecutor {
       // tool invocations are short and need the complete block to parse.
       if (hasTools) {
         let { content, reasoningContent } = await collectSSEContent(resp.body, clientModel);
-        let parsed = parseDeepSeekToolCalls(content, `call-${Date.now()}`, requestedTools);
+        let parsed = useAiSdkToolProfile
+          ? ((await parseDeepSeekWebAiSdkTools(deepseekWebToolProfile, content, requestedTools)) || parseDeepSeekToolCalls(content, `call-${Date.now()}`, requestedTools))
+          : parseDeepSeekToolCalls(content, `call-${Date.now()}`, requestedTools);
 
         // DSML / malformed envelopes are explicit tool intent, not plain answers: retry once in a
         // fresh session. The reply goes through the same parser (fork DSML dialects stay nonce-
@@ -1016,7 +1033,7 @@ export class DeepSeekWebExecutor extends BaseExecutor {
             transformedBody: requestPayload,
           };
         };
-        if (hasMalformedDeepSeekToolIntent(parsed.content, requestedTools)) {
+        if (!useAiSdkToolProfile && hasMalformedDeepSeekToolIntent(parsed.content, requestedTools)) {
           log?.warn?.("DEEPSEEK-WEB", "Malformed tool envelope — retrying once with nonce binding");
           sessionCache.delete(userToken);
           await deleteSessionOnDeepSeek(accessToken, sessionId).catch(() => {});
@@ -1034,8 +1051,10 @@ export class DeepSeekWebExecutor extends BaseExecutor {
           ({ resp, reqHeaders, requestPayload } = await performCompletion(sessionId, repairPrompt));
           if (!resp.ok) return repairFailed("DeepSeek tool-call repair request failed.");
           ({ content, reasoningContent } = await collectSSEContent(resp.body, clientModel));
-          parsed = parseDeepSeekToolCalls(content, `call-${Date.now()}`, requestedTools);
-          if (hasMalformedDeepSeekToolMarkup(parsed.content)) {
+          parsed = useAiSdkToolProfile
+            ? ((await parseDeepSeekWebAiSdkTools(deepseekWebToolProfile, content, requestedTools)) || parseDeepSeekToolCalls(content, `call-${Date.now()}`, requestedTools))
+            : parseDeepSeekToolCalls(content, `call-${Date.now()}`, requestedTools);
+          if (!useAiSdkToolProfile && hasMalformedDeepSeekToolMarkup(parsed.content)) {
             return repairFailed("DeepSeek emitted an invalid tool call after repair.");
           }
         }

@@ -23,6 +23,7 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
   });
   const [cloudflareData, setCloudflareData] = useState({ accountId: "" });
   const [awsData, setAwsData] = useState({ profile: "", region: "", accessKeyId: "", sessionToken: "" });
+const [deepseekData, setDeepseekData] = useState({ deepseekWebToolProtocol: "deepseek" });
   const [clearAwsSessionToken, setClearAwsSessionToken] = useState(false);
   const [region, setRegion] = useState("");
   const [testing, setTesting] = useState(false);
@@ -50,6 +51,9 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
       if (connection.provider === "cloudflare-ai" && connection.providerSpecificData) {
         setCloudflareData({ accountId: connection.providerSpecificData.accountId || "" });
       }
+      if (connection.provider === "deepseek-web" && connection.providerSpecificData) {
+        setDeepseekData({ deepseekWebToolProtocol: connection.providerSpecificData.deepseekWebToolProtocol || "deepseek" });
+      }
       if (AI_PROVIDERS?.[connection.provider]?.credentialForm === "aws") {
         const psd = connection.providerSpecificData || {};
         setAwsData({
@@ -74,6 +78,7 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
   const isOAuth = connection?.authType === "oauth";
   const isAzure = connection?.provider === "azure";
   const isCloudflareAi = connection?.provider === "cloudflare-ai";
+const isDeepseekWeb = connection?.provider === "deepseek-web";
   const usesAwsCredentialForm = AI_PROVIDERS?.[connection?.provider]?.credentialForm === "aws";
   const isCompatible = connection
     ? (isOpenAICompatibleProvider(connection.provider) || isAnthropicCompatibleProvider(connection.provider))
@@ -88,7 +93,11 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
 
   // The server keeps a saved session token when this password field is blank. Other empty
   // fields still clear their saved values so a profile can be switched to static keys.
-  const buildAwsSpecificData = () => ({
+  const buildDeepseekWebSpecificData = () => ({
+    ...((connection?.providerSpecificData) || {}),
+    deepseekWebToolProtocol: deepseekData.deepseekWebToolProtocol || "deepseek",
+  });
+const buildAwsSpecificData = () => ({
     profile: awsData.profile.trim(),
     region: awsData.region.trim(),
     accessKeyId: awsData.accessKeyId.trim(),
@@ -125,6 +134,7 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
           ...(isCloudflareAi ? { providerSpecificData: cloudflareData } : {}),
           ...(usesAwsCredentialForm ? { providerSpecificData: buildAwsSpecificData() } : {}),
           ...(providerRegions ? { providerSpecificData: buildRegionSpecificData() } : {}),
+          ...(isDeepseekWeb ? { providerSpecificData: buildDeepseekWebSpecificData() } : {}),
         }),
       });
       const data = await res.json();
@@ -161,6 +171,7 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
                 ...(isCloudflareAi ? { providerSpecificData: cloudflareData } : {}),
                 ...(usesAwsCredentialForm ? { providerSpecificData: buildAwsSpecificData() } : {}),
                 ...(providerRegions ? { providerSpecificData: buildRegionSpecificData() } : {}),
+          ...(isDeepseekWeb ? { providerSpecificData: buildDeepseekWebSpecificData() } : {}),
               }),
             });
             const data = await res.json();
@@ -197,6 +208,9 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
       // Persist updated region for region-aware providers
       if (providerRegions && region) {
         updates.providerSpecificData = buildRegionSpecificData();
+      }
+      if (isDeepseekWeb) {
+        updates.providerSpecificData = buildDeepseekWebSpecificData();
       }
       
       await onSave(updates);
@@ -344,6 +358,22 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
             value={region}
             onChange={(e) => setRegion(e.target.value)}
             options={providerRegions.map((r) => ({ value: r.id, label: r.label }))}
+          />
+        )}
+
+        {isDeepseekWeb && (
+          <Select
+            label="Tool Parser Profile"
+            value={deepseekData.deepseekWebToolProtocol || "deepseek"}
+            onChange={(e) => setDeepseekData({ ...deepseekData, deepseekWebToolProtocol: e.target.value })}
+            options={[
+              { value: "deepseek", label: "DeepSeek native (default)" },
+              { value: "hermes", label: "Hermes JSON" },
+              { value: "morphXml", label: "Morph XML" },
+              { value: "yamlXml", label: "YAML XML" },
+              { value: "qwen3Coder", label: "Qwen3 Coder" },
+              { value: "uiTars", label: "UI-TARS" },
+            ]}
           />
         )}
 

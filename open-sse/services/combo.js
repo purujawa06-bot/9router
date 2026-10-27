@@ -542,8 +542,9 @@ export async function handleComboChat({
         // (empty) response as-is, preserving prior behaviour rather than manufacturing a 5xx.
         const reasonLabel = peeked.finishReason || "no-content";
         const isLast = i === rotatedModels.length - 1;
-        if (isNoRetryFinish(peeked.finishReason) || isLast) {
-          log.warn("COMBO", `Model ${modelStr} returned empty (${reasonLabel}) — ${isNoRetryFinish(peeked.finishReason) ? "no-retry class" : "last candidate"}, returning as-is`);
+        const isToolCallEmpty = peeked.finishReason === "tool_calls" || peeked.finishReason === "function_call";
+        if (isNoRetryFinish(peeked.finishReason) || isToolCallEmpty || isLast) {
+          log.warn("COMBO", `Model ${modelStr} returned empty (${reasonLabel}) — ${isToolCallEmpty ? "tool-call result" : (isNoRetryFinish(peeked.finishReason) ? "no-retry class" : "last candidate")}, returning as-is`);
           return peeked.response;
         }
 

@@ -39,6 +39,8 @@ export function deltaHasClientContent(delta) {
   if (typeof c === "string" && c.length > 0) return true;
   if (Array.isArray(c) && c.length > 0) return true;
   if (Array.isArray(delta.tool_calls) && delta.tool_calls.length > 0) return true;
+  if (delta.tool_call) return true;
+  if (delta.function_call) return true;
   // OpenAI "Responses" style / non-chat deltas occasionally use output_text
   if (typeof delta.output_text === "string" && delta.output_text.length > 0) return true;
   return false;
