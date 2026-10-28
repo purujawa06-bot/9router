@@ -11,7 +11,6 @@
 import { spawn } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
-import { createRequire } from "node:module";
 import { pathToFileURL } from "node:url";
 import { getWritableDataDir } from "../utils/writableDataDir.js";
 
@@ -30,11 +29,52 @@ function isModuleMissing(error) {
   return code === "MODULE_NOT_FOUND" || code === "ERR_MODULE_NOT_FOUND";
 }
 
+function moduleNotFound(pkg) {
+  const error = new Error(`Cannot find module '${pkg}'`);
+  error.code = "MODULE_NOT_FOUND";
+  return error;
+}
+
+// Resolve a package from <dir>/node_modules without createRequire. Webpack
+// constant-folds createRequire(...) to undefined in the standalone CLI build,
+// which made the old code throw "reading 'resolve'" before ever reaching the
+// on-demand install. Reading the package manifest keeps this bundler-safe.
+function resolveRuntimeEntry(dir, pkg) {
+  const pkgDir = path.join(dir, "node_modules", pkg);
+  let manifest;
+  try {
+    manifest = JSON.parse(fs.readFileSync(path.join(pkgDir, "package.json"), "utf8"));
+  } catch {
+    throw moduleNotFound(pkg);
+  }
+  const exportsField = manifest.exports;
+  let entry;
+  if (typeof exportsField === "string") {
+    entry = exportsField;
+  } else if (exportsField && typeof exportsField === "object") {
+    const root = exportsField["."] ?? exportsField;
+    if (typeof root === "string") entry = root;
+    else if (root && typeof root === "object") entry = root.import || root.default || root.require;
+  }
+  entry ||= manifest.module || manifest.main || "index.js";
+  return pathToFileURL(path.join(pkgDir, entry)).href;
+}
+
+async function importFromRuntime(dir, pkg) {
+  // webpackIgnore is essential: without it webpack replaces this dynamic import
+  // with a context module that always throws MODULE_NOT_FOUND in the standalone
+  // CLI, so the runtime install could never be loaded.
+  return await import(/* webpackIgnore: true */ resolveRuntimeEntry(dir, pkg));
+}
+
 function npmInstall(pkg, version) {
   const cwd = getRuntimeDir();
   fs.mkdirSync(cwd, { recursive: true });
   const npm = process.platform === "win32" ? "npm.cmd" : "npm";
-  const args = ["install", "--no-audit", "--no-fund", "--prefer-online", `${pkg}@${version}`];
+  // --prefix is required: without it npm walks up from cwd and installs into
+  // an unrelated package.json's workspace (often the user's home directory),
+  // leaving the runtime dir empty.
+  const args = ["install", "--prefix", cwd, "--no-audit", "--no-fund", "--prefer-online", `${pkg}@${version}`];
   return new Promise((resolve) => {
     const child = spawn(npm, args, { cwd, stdio: ["ignore", "pipe", "pipe"], shell: process.platform === "win32" });
     let stderr = "";
@@ -54,9 +94,8 @@ async function load(pkg) {
     if (!isModuleMissing(error)) throw error;
   }
   // 2) Already present in the runtime dir from a previous install.
-  const runtimeRequire = createRequire(path.join(getRuntimeDir(), "package.json"));
   try {
-    return await import(pathToFileURL(runtimeRequire.resolve(pkg)).href);
+    return await importFromRuntime(getRuntimeDir(), pkg);
   } catch (error) {
     if (!isModuleMissing(error)) throw error;
   }
@@ -71,7 +110,7 @@ async function load(pkg) {
       `install it manually: cd "${dir}" && npm install ${pkg}@${version}`
     );
   }
-  return import(pathToFileURL(createRequire(path.join(dir, "package.json")).resolve(pkg)).href);
+  return importFromRuntime(dir, pkg);
 }
 
 export function loadRuntimeDep(pkg) {
