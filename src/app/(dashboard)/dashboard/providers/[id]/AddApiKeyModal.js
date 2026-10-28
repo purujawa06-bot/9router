@@ -20,7 +20,6 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
 
   const isAzure = provider === "azure";
   const isCloudflareAi = provider === "cloudflare-ai";
-  const isDeepseekWeb = provider === "deepseek-web";
   // Capability, not identity: gating this on `provider === "bedrock"` left bedrock-xai with no
   // way to enter a profile at all, which is the same mistake as hardcoding the API-key exemption.
   const usesAwsCredentialForm =
@@ -46,7 +45,6 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
     organization: "",
   });
   const [cloudflareData, setCloudflareData] = useState({ accountId: "" });
-  const [deepseekToolProtocol, setDeepseekToolProtocol] = useState("deepseek");
   const [bedrockData, setBedrockData] = useState({
     profile: "",
     region: "",
@@ -81,9 +79,6 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
     }
     if (isCloudflareAi) {
       return { accountId: cloudflareData.accountId };
-    }
-    if (isDeepseekWeb) {
-      return { deepseekWebToolProtocol: deepseekToolProtocol };
     }
     if (usesAwsCredentialForm) {
       // Only send what the user filled in: an empty `profile` would otherwise select profile
@@ -333,26 +328,6 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
             onChange={(e) => setRegion(e.target.value)}
             options={providerRegions.map((r) => ({ value: r.id, label: r.label }))}
           />
-        )}
-        {isDeepseekWeb && (
-          <>
-            <Select
-              label="Tool Parser Profile"
-              value={deepseekToolProtocol}
-              onChange={(e) => setDeepseekToolProtocol(e.target.value)}
-              options={[
-                { value: "deepseek", label: "DeepSeek native (default)" },
-                { value: "hermes", label: "Hermes JSON" },
-                { value: "morphXml", label: "Morph XML" },
-                { value: "yamlXml", label: "YAML XML" },
-                { value: "qwen3Coder", label: "Qwen3 Coder" },
-                { value: "uiTars", label: "UI-TARS" },
-              ]}
-            />
-            <p className="text-xs text-text-muted">
-              Only used for tool-calling requests. Keep DeepSeek native unless you specifically need another parser protocol.
-            </p>
-          </>
         )}
         {isCompatible && (
           <Input

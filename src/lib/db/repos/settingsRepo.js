@@ -12,6 +12,9 @@ const DEFAULT_SETTINGS = {
   tailscaleUrl: "",
   stickyRoundRobinLimit: 3,
   providerStrategies: {},
+  // Per-provider tool-parser protocol (e.g. deepseek-web: hermes/morphXml/...).
+  // Provider-wide on purpose: every connection must use the same parser.
+  providerToolProtocols: {},
   quotaVisibility: {},
   comboStrategy: "fallback",
   comboStickyRoundRobinLimit: 1,

@@ -72,6 +72,7 @@ export default function ProviderDetailPage() {
   const [providerStrategy, setProviderStrategy] = useState(null);
   const [providerStickyLimit, setProviderStickyLimit] = useState("");
   const [thinkingMode, setThinkingMode] = useState("auto");
+  const [toolProtocol, setToolProtocol] = useState("deepseek");
   const [autoPing, setAutoPing] = useState({ enabled: false, connections: {}, schedules: {} });
   const [scheduleConnection, setScheduleConnection] = useState(null);
   const [suggestedModels, setSuggestedModels] = useState([]);
@@ -332,6 +333,8 @@ export default function ProviderDetailPage() {
       // Load per-provider thinking config
       const thinkingCfg = (settingsData.providerThinking || {})[providerId] || {};
       setThinkingMode(thinkingCfg.mode || "auto");
+      // Load provider-wide tool-parser protocol (deepseek-web only)
+      setToolProtocol((settingsData.providerToolProtocols || {})[providerId] || "deepseek");
       const autoPingSettingsKey = AUTO_PING_SETTINGS_KEYS[providerId];
       const apCfg = autoPingSettingsKey ? settingsData[autoPingSettingsKey] || {} : {};
       setAutoPing({ enabled: apCfg.enabled === true, connections: apCfg.connections || {}, schedules: apCfg.schedules || {} });
@@ -445,6 +448,25 @@ export default function ProviderDetailPage() {
   const handleThinkingModeChange = (mode) => {
     setThinkingMode(mode);
     saveThinkingConfig(mode);
+  };
+
+  // Provider-wide tool-parser protocol. deepseek-web translates tools into a
+  // text contract, so every connection must share the same parser — a per-key
+  // value would make the same prompt parse differently depending on the key.
+  const saveToolProtocol = async (protocol) => {
+    setToolProtocol(protocol);
+    try {
+      const settingsRes = await fetch("/api/settings", { cache: "no-store" });
+      const settingsData = settingsRes.ok ? await settingsRes.json() : {};
+      const current = settingsData.providerToolProtocols || {};
+      await fetch("/api/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ providerToolProtocols: { ...current, [providerId]: protocol } }),
+      });
+    } catch (error) {
+      console.log("Error saving tool protocol:", error);
+    }
   };
 
   const saveAutoPing = async (next) => {
@@ -1592,6 +1614,24 @@ export default function ProviderDetailPage() {
                   </div>
                 )}
               </div>
+              {providerId === "deepseek-web" && (
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-xs text-text-muted font-medium">Tool Parser</span>
+                  <select
+                    value={toolProtocol}
+                    onChange={(e) => saveToolProtocol(e.target.value)}
+                    title="Parser protocol shared by every deepseek-web connection"
+                    className="rounded-md border border-border bg-background px-2 py-1 text-xs focus:border-primary focus:outline-none"
+                  >
+                    <option value="deepseek">DeepSeek native (default)</option>
+                    <option value="hermes">Hermes JSON</option>
+                    <option value="morphXml">Morph XML</option>
+                    <option value="yamlXml">YAML XML</option>
+                    <option value="qwen3Coder">Qwen3 Coder</option>
+                    <option value="uiTars">UI-TARS</option>
+                  </select>
+                </div>
+              )}
             </div>
           </div>
 

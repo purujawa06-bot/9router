@@ -382,6 +382,7 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
 
   // Execute request
   let providerResponse, providerUrl, providerHeaders, finalBody;
+  let toolProtocol = null;
   // Most executors return their registry format. Cursor AgentService is an
   // exception: it is decoded by the executor into OpenAI-compatible output.
   let providerResponseFormat = targetFormat;
@@ -402,6 +403,7 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     providerUrl = result.url;
     providerHeaders = result.headers;
     finalBody = result.transformedBody;
+    toolProtocol = result.toolProtocol || null;
     providerResponseFormat = result.responseFormat || targetFormat;
     const renamedToolNames = takeRenamedToolNames(translatedBody);
     if (renamedToolNames?.size) {
@@ -470,6 +472,7 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
           if (retryResult.response.ok) {
             providerResponse = retryResult.response;
             providerUrl = retryResult.url;
+            toolProtocol = retryResult.toolProtocol || toolProtocol;
             providerResponseFormat = retryResult.responseFormat || targetFormat;
           }
         } catch { log?.warn?.("TOKEN", `${provider.toUpperCase()} | retry after refresh failed`); }
@@ -506,7 +509,7 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     return createErrorResult(statusCode, errMsg, resetsAtMs, upstreamResponseHeaders(providerResponse.headers));
   }
 
-  const sharedCtx = { provider, model, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, clientRawRequest, onRequestSuccess, pxpipe: pxpipeSummary, reqTag, log };
+  const sharedCtx = { provider, model, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, clientRawRequest, onRequestSuccess, pxpipe: pxpipeSummary, reqTag, log, toolProtocol };
   const appendLog = (extra) => appendRequestLog({ model, provider, connectionId, ...extra }).catch(() => { });
   const trackDone = () => trackPendingRequest(model, provider, connectionId, false);
 

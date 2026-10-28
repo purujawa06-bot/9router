@@ -6,6 +6,8 @@
 import { BaseExecutor } from "./base.js";
 import { SSE_DONE, SSE_HEADERS_NO_BUFFER } from "../utils/sseConstants.js";
 import { sseChunk } from "../utils/sse.js";
+import { estimateUsage } from "../utils/usageTracking.js";
+import { FORMATS } from "../translator/formats.js";
 import { solveDeepSeekPowAsync } from "../lib/deepseek-pow.js";
 import {
   serializeDeepSeekToolPrompt,
@@ -695,28 +697,31 @@ async function getPowChallenge(accessToken, signal, targetPath = "/api/v0/chat/c
  * content. Supports both streaming (synthetic SSE) and non-streaming clients.
  */
 function buildToolAwareOpenAIResult(opts) {
-  const { stream, clientModel, content, reasoningContent, toolCalls, reqHeaders, requestPayload } =
+  const { stream, clientModel, content, reasoningContent, toolCalls, reqHeaders, requestPayload, toolProtocol } =
     opts;
   const hasCalls = !!toolCalls && toolCalls.length > 0;
   const finishReason = hasCalls ? "tool_calls" : "stop";
   const id = `chatcmpl-${Date.now()}`;
   const created = Math.floor(Date.now() / 1000);
+  // The web upstream never reports token counts. Without a non-zero estimate the
+  // usage row is dropped entirely (saveUsageStats ignores 0/0), so tool calls
+  // would never show up in Usage & Analytics.
+  const outputLength = (content || "").length + (hasCalls ? JSON.stringify(toolCalls).length : 0);
+  const usage = estimateUsage(requestPayload || {}, outputLength, FORMATS.OPENAI);
 
   if (stream) {
     const encoder = new TextEncoder();
-    const emit = (controller, delta, finish) => {
-      controller.enqueue(
-        encoder.encode(
-          sseChunk({
-            id,
-            object: "chat.completion.chunk",
-            created,
-            model: clientModel,
-            system_fingerprint: null,
-            choices: [{ index: 0, delta, finish_reason: finish, logprobs: null }],
-          })
-        )
-      );
+    const emit = (controller, delta, finish, chunkUsage = null) => {
+      const payload = {
+        id,
+        object: "chat.completion.chunk",
+        created,
+        model: clientModel,
+        system_fingerprint: null,
+        choices: [{ index: 0, delta, finish_reason: finish, logprobs: null }],
+      };
+      if (chunkUsage) payload.usage = chunkUsage;
+      controller.enqueue(encoder.encode(sseChunk(payload)));
     };
     const sse = new ReadableStream({
       start(controller) {
@@ -739,7 +744,9 @@ function buildToolAwareOpenAIResult(opts) {
             null
           );
         }
-        emit(controller, {}, finishReason);
+        // Usage rides the finish chunk; a tool-call-only stream has no content
+        // for the generic estimator to measure.
+        emit(controller, {}, finishReason, usage);
         controller.enqueue(encoder.encode(SSE_DONE));
         controller.close();
       },
@@ -749,6 +756,7 @@ function buildToolAwareOpenAIResult(opts) {
       url: COMPLETION_URL,
       headers: reqHeaders,
       transformedBody: requestPayload,
+      toolProtocol,
     };
   }
 
@@ -764,7 +772,7 @@ function buildToolAwareOpenAIResult(opts) {
     created,
     model: clientModel,
     choices: [{ index: 0, message, finish_reason: finishReason, logprobs: null }],
-    usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
+    usage,
   };
   return {
     response: new Response(JSON.stringify(openaiResponse), {
@@ -774,10 +782,31 @@ function buildToolAwareOpenAIResult(opts) {
     url: COMPLETION_URL,
     headers: reqHeaders,
     transformedBody: requestPayload,
+    toolProtocol,
   };
 }
 
 // ── Executor ─────────────────────────────────────────────────────────────
+
+// The tool-parser contract is a provider-wide setting: every deepseek-web
+// connection must speak the same protocol, otherwise the same prompt is parsed
+// differently depending on which key happens to be selected. Connection-level
+// values are only kept as a migration fallback for older installs.
+async function resolveToolProtocol(rawCreds) {
+  try {
+    const { getSettings } = await import("@/lib/db/repos/settingsRepo.js");
+    const settings = await getSettings();
+    const globalProtocol = settings?.providerToolProtocols?.["deepseek-web"];
+    if (globalProtocol) return String(globalProtocol).trim() || "deepseek";
+  } catch {
+    /* settings unavailable — use the connection fallback below */
+  }
+  return String(
+    rawCreds?.providerSpecificData?.deepseekWebToolProtocol ||
+    rawCreds?.providerSpecificData?.deepseekWebToolProfile ||
+    "deepseek"
+  ).trim() || "deepseek";
+}
 
 export class DeepSeekWebExecutor extends BaseExecutor {
   constructor() {
@@ -807,10 +836,13 @@ export class DeepSeekWebExecutor extends BaseExecutor {
     const hasTools = Array.isArray(requestedTools) && requestedTools.length > 0;
     const messages = Array.isArray(bodyObj.messages) ? bodyObj.messages : [];
     const rawCreds = credentials ?? {};
-    const deepseekWebToolProfile = hasTools
-      ? (String(rawCreds?.providerSpecificData?.deepseekWebToolProtocol || rawCreds?.providerSpecificData?.deepseekWebToolProfile || "deepseek").trim() || "deepseek")
-      : "deepseek";
+    const deepseekWebToolProfile = hasTools ? await resolveToolProtocol(rawCreds) : "deepseek";
     const useAiSdkToolProfile = hasTools && isAiSdkDeepSeekWebToolProfile(deepseekWebToolProfile);
+    if (hasTools) {
+      // Make the active parser visible in the console/log stream; the request
+      // detail row carries the same value for the logs drawer.
+      log?.info?.("DEEPSEEK-WEB", `Tool parser profile: ${deepseekWebToolProfile}`);
+    }
     let toolSystemPrompt = "";
     if (hasTools) {
       if (useAiSdkToolProfile) {
@@ -1068,6 +1100,7 @@ export class DeepSeekWebExecutor extends BaseExecutor {
           toolCalls: parsed.toolCalls,
           reqHeaders,
           requestPayload,
+          toolProtocol: deepseekWebToolProfile,
         });
       }
 
@@ -1082,6 +1115,7 @@ export class DeepSeekWebExecutor extends BaseExecutor {
           url: COMPLETION_URL,
           headers: reqHeaders,
           transformedBody: requestPayload,
+          toolProtocol: deepseekWebToolProfile,
         };
       }
 
@@ -1102,7 +1136,8 @@ export class DeepSeekWebExecutor extends BaseExecutor {
             logprobs: null,
           },
         ],
-        usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
+        // No token counts from the web API — estimate so the request is counted.
+        usage: estimateUsage(requestPayload || {}, (content || "").length, FORMATS.OPENAI),
       };
       return {
         response: new Response(JSON.stringify(openaiResponse), {
@@ -1112,6 +1147,7 @@ export class DeepSeekWebExecutor extends BaseExecutor {
         url: COMPLETION_URL,
         headers: reqHeaders,
         transformedBody: requestPayload,
+        toolProtocol: deepseekWebToolProfile,
       };
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -1139,3 +1175,6 @@ export class DeepSeekWebExecutor extends BaseExecutor {
 export const deepseekWebExecutor = new DeepSeekWebExecutor();
 
 export { acquireAccessToken, tokenCache, sessionCache };
+
+// Unit-test seams for the usage estimate and provider-wide protocol resolution.
+export const __test__ = { buildToolAwareOpenAIResult, resolveToolProtocol };

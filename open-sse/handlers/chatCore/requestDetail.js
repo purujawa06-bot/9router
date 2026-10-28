@@ -84,6 +84,9 @@ export function buildRequestDetail(base, overrides = {}) {
     provider: base.provider || "unknown",
     model: base.model || "unknown",
     connectionId: base.connectionId || undefined,
+    // Parser protocol used for providers that translate tools into text
+    // (currently deepseek-web). Null for providers with native tool calls.
+    toolProtocol: base.toolProtocol || null,
     timestamp: new Date().toISOString(),
     latency: base.latency || { ttft: 0, total: 0 },
     tokens: base.tokens || { prompt_tokens: 0, completion_tokens: 0 },

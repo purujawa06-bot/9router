@@ -295,6 +295,11 @@ export default function RequestDetailsTab() {
                        <span className="font-medium">
                          {getProviderName(detail.provider, providerNameCache)}
                        </span>
+                       {detail.toolProtocol && (
+                         <span className="ml-2 rounded bg-primary/10 px-1.5 py-0.5 text-[10px] font-mono text-primary align-middle">
+                           {detail.toolProtocol}
+                         </span>
+                       )}
                      </td>
                     <td className="p-4 text-sm text-text-main text-right font-mono">
                       {getInputTokens(detail.tokens).toLocaleString()}
@@ -368,6 +373,12 @@ export default function RequestDetailsTab() {
                 <span className="text-text-muted">Model:</span>{" "}
                 <span className="text-text-main font-mono">{selectedDetail.model}</span>
               </div>
+              {selectedDetail.toolProtocol && (
+                <div>
+                  <span className="text-text-muted">Tool Protocol:</span>{" "}
+                  <span className="text-text-main font-mono">{selectedDetail.toolProtocol}</span>
+                </div>
+              )}
               <div>
                 <span className="text-text-muted">Status:</span>{" "}
                 <span className={cn(
