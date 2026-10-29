@@ -31,31 +31,10 @@ export function ollamaToOpenAIResponse(chunk, state) {
 
   const { id, created, model } = state.ollama;
 
-  // Final chunk with done=true
-  if (chunk.done) {
-    const usage = extractUsage(chunk);
-    
-    // Determine finish_reason: map upstream done_reason, override to tool_calls if tools used
-    let finishReason = toOpenAIFinish(chunk.done_reason, "ollama");
-    if (chunk.done_reason === OPENAI_FINISH.TOOL_CALLS || state.hadToolCalls) {
-      finishReason = OPENAI_FINISH.TOOL_CALLS;
-    }
-
-    const doneChunk = buildChunk({ id, created, model }, {}, finishReason);
-    doneChunk.usage = usage;
-    return doneChunk;
-  }
-
-  // Content chunk
   const message = chunk.message;
-  if (!message) return null;
-
-  const content = typeof message.content === "string" ? message.content : "";
-  const thinking = typeof message.thinking === "string" ? message.thinking : "";
-  const toolCalls = Array.isArray(message.tool_calls) ? message.tool_calls : null;
-
-  // Skip empty chunks
-  if (!content && !thinking && !toolCalls) return null;
+  const content = typeof message?.content === "string" ? message.content : "";
+  const thinking = typeof message?.thinking === "string" ? message.thinking : "";
+  const toolCalls = Array.isArray(message?.tool_calls) ? message.tool_calls : null;
 
   // Accumulate content in state
   if (content) {
@@ -68,12 +47,30 @@ export function ollamaToOpenAIResponse(chunk, state) {
   const delta = {};
   if (content) delta.content = content;
   if (thinking) delta.reasoning_content = thinking;
-  
-  // Convert Ollama tool_calls to OpenAI format
   if (toolCalls) {
     state.hadToolCalls = true;
     delta.tool_calls = convertToolCalls(toolCalls);
   }
+
+  // Final chunk with done=true. A non-streaming body (upstream ignored stream:true)
+  // arrives as a single object that carries both `message` and `done:true`; its
+  // content/tool calls must ride the terminal chunk instead of being dropped.
+  if (chunk.done) {
+    const usage = extractUsage(chunk);
+
+    // Determine finish_reason: map upstream done_reason, override to tool_calls if tools used
+    let finishReason = toOpenAIFinish(chunk.done_reason, "ollama");
+    if (chunk.done_reason === OPENAI_FINISH.TOOL_CALLS || state.hadToolCalls) {
+      finishReason = OPENAI_FINISH.TOOL_CALLS;
+    }
+
+    const doneChunk = buildChunk({ id, created, model }, delta, finishReason);
+    doneChunk.usage = usage;
+    return doneChunk;
+  }
+
+  // Skip empty chunks
+  if (!content && !thinking && !toolCalls) return null;
 
   return buildChunk({ id, created, model }, delta, null);
 }
