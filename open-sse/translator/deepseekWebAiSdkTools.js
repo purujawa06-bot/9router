@@ -23,7 +23,10 @@ const SYSTEM_PROMPT_FACTORIES = {
   morphXml: (m) => m.morphXmlSystemPromptTemplate,
   yamlXml: (m) => m.yamlXmlSystemPromptTemplate,
   qwen3Coder: (m) => m.qwen3coderSystemPromptTemplate,
-  uiTars: (m) => m.morphXmlSystemPromptTemplate,
+  // Upstream aliases `uiTarsXmlProtocol` to `qwen3CoderProtocol`, so the prompt must
+  // teach that same `<tool_call><function=...>` markup — a morphXml prompt makes the
+  // model emit bare XML tags the protocol parser cannot read.
+  uiTars: (m) => m.qwen3coderSystemPromptTemplate,
 };
 
 export function isAiSdkDeepSeekWebToolProfile(profile) {
@@ -65,14 +68,7 @@ export async function formatDeepSeekWebToolPrompt(profile, tools) {
   return String(raw || "").trim();
 }
 
-export async function parseDeepSeekWebAiSdkTools(profile, content, tools) {
-  const parser = await getParserModule();
-  const protocolFactory = PROTOCOL_FACTORIES[profile];
-  if (!protocolFactory) return null;
-  const protocol = protocolFactory(parser);
-  if (!protocol || typeof protocol.parseGeneratedText !== "function") return null;
-
-  const v4Tools = toV4Tools(tools);
+function parseWithProtocol(protocol, content, v4Tools) {
   const parsed = protocol.parseGeneratedText({ text: content || "", tools: v4Tools, options: {} });
   const contentParts = [];
   const toolCalls = [];
@@ -92,11 +88,37 @@ export async function parseDeepSeekWebAiSdkTools(profile, content, tools) {
       });
     }
   }
+  return { content: contentParts.join("").trim(), toolCalls };
+}
 
-  return {
-    content: contentParts.join("").trim(),
-    toolCalls,
-  };
+function mentionsRequestedToolTag(content, v4Tools) {
+  if (!content || !v4Tools.length) return false;
+  const names = v4Tools.map((t) => t.name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
+  return new RegExp(`<\\s*(?:${names.join("|")})\\b`).test(content);
+}
+
+export async function parseDeepSeekWebAiSdkTools(profile, content, tools) {
+  const parser = await getParserModule();
+  const protocolFactory = PROTOCOL_FACTORIES[profile];
+  if (!protocolFactory) return null;
+  const protocol = protocolFactory(parser);
+  if (!protocol || typeof protocol.parseGeneratedText !== "function") return null;
+
+  const v4Tools = toV4Tools(tools);
+  const result = parseWithProtocol(protocol, content, v4Tools);
+  if (result.toolCalls.length > 0 || !mentionsRequestedToolTag(content, v4Tools)) {
+    return result;
+  }
+
+  // Models sometimes answer an XML-shaped prompt with bare `<tool_name><param>…`
+  // markup instead of the protocol's own envelope. Salvage those calls rather than
+  // returning empty tool_calls while the markup sits in the visible content.
+  const morphProtocol = parser.morphXmlProtocol?.();
+  if (morphProtocol && typeof morphProtocol.parseGeneratedText === "function") {
+    const salvaged = parseWithProtocol(morphProtocol, result.content, v4Tools);
+    if (salvaged.toolCalls.length > 0) return salvaged;
+  }
+  return result;
 }
 
 export const DEEPSEEK_WEB_AI_SDK_TOOL_PROFILES = Object.keys(PROTOCOL_FACTORIES).filter((k) => k !== "deepseek");

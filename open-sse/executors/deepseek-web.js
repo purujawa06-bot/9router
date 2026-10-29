@@ -1046,11 +1046,19 @@ export class DeepSeekWebExecutor extends BaseExecutor {
       // Tool-call translation: buffer the full reply and parse <tool> blocks into
       // OpenAI tool_calls. Buffering (even for stream clients) is acceptable because
       // tool invocations are short and need the complete block to parse.
+      const parseToolReply = async (text) => {
+        if (!useAiSdkToolProfile) return parseDeepSeekToolCalls(text, `call-${Date.now()}`, requestedTools);
+        const aiSdk = await parseDeepSeekWebAiSdkTools(deepseekWebToolProfile, text, requestedTools);
+        // An AI-SDK profile that finds no calls must not swallow the built-in parser:
+        // the legacy dialects (<tool>, DSML, bare JSON) are still worth a try.
+        return aiSdk?.toolCalls?.length
+          ? aiSdk
+          : parseDeepSeekToolCalls(text, `call-${Date.now()}`, requestedTools);
+      };
+
       if (hasTools) {
         let { content, reasoningContent } = await collectSSEContent(resp.body, clientModel);
-        let parsed = useAiSdkToolProfile
-          ? ((await parseDeepSeekWebAiSdkTools(deepseekWebToolProfile, content, requestedTools)) || parseDeepSeekToolCalls(content, `call-${Date.now()}`, requestedTools))
-          : parseDeepSeekToolCalls(content, `call-${Date.now()}`, requestedTools);
+        let parsed = await parseToolReply(content);
 
         // DSML / malformed envelopes are explicit tool intent, not plain answers: retry once in a
         // fresh session. The reply goes through the same parser (fork DSML dialects stay nonce-
@@ -1083,9 +1091,7 @@ export class DeepSeekWebExecutor extends BaseExecutor {
           ({ resp, reqHeaders, requestPayload } = await performCompletion(sessionId, repairPrompt));
           if (!resp.ok) return repairFailed("DeepSeek tool-call repair request failed.");
           ({ content, reasoningContent } = await collectSSEContent(resp.body, clientModel));
-          parsed = useAiSdkToolProfile
-            ? ((await parseDeepSeekWebAiSdkTools(deepseekWebToolProfile, content, requestedTools)) || parseDeepSeekToolCalls(content, `call-${Date.now()}`, requestedTools))
-            : parseDeepSeekToolCalls(content, `call-${Date.now()}`, requestedTools);
+          parsed = await parseToolReply(content);
           if (!useAiSdkToolProfile && hasMalformedDeepSeekToolMarkup(parsed.content)) {
             return repairFailed("DeepSeek emitted an invalid tool call after repair.");
           }
