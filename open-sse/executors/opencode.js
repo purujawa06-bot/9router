@@ -7,7 +7,7 @@ import { injectReasoningContent } from "../utils/reasoningContentInjector.js";
 import { resolveSessionId } from "../utils/sessionManager.js";
 import { isMuseSparkModel } from "../providers/models/helpers.js";
 import { applyFingerprintTools } from "../utils/opencodeFingerprint.js";
-import { opencodeTlsFetch, OpencodeTlsUnavailableError } from "../services/opencodeTlsClient.js";
+import { opencodeTlsFetch } from "../services/opencodeTlsClient.js";
 import { ANTHROPIC_API_VERSION } from "../providers/shared.js";
 import {
   normalizeResponsesInput,
@@ -412,22 +412,11 @@ export class OpenCodeExecutor extends BaseExecutor {
     return super.execute({
       ...args,
       credentials,
-      directFetch: async (url, options) => {
-        try {
-          return await opencodeTlsFetch(url, {
-            method: options.method,
-            headers: options.headers,
-            body: options.body,
-          }, { signal: options.signal });
-        } catch (error) {
-          if (!(error instanceof OpencodeTlsUnavailableError)) throw error;
-          // Fail-open, as documented above: a missing optional TLS runtime must
-          // not turn every free-tier request into a 502. Native fetch may still
-          // be gated upstream, but the proxy stays usable.
-          args.log?.warn?.("[opencode] wreq-js unavailable; falling back to native fetch");
-          return fetch(url, options);
-        }
-      },
+      directFetch: (url, options) => opencodeTlsFetch(url, {
+        method: options.method,
+        headers: options.headers,
+        body: options.body,
+      }, { signal: options.signal }),
     });
   }
 

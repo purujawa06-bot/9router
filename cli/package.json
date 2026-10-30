@@ -1,6 +1,6 @@
 {
-  "name": "@rikipurpur/9router",
-  "version": "2.9.5",
+  "name": "9router",
+  "version": "0.5.112",
   "description": "9Router CLI - Start and manage 9Router server",
   "repository": {
     "type": "git",
