@@ -43,38 +43,6 @@ function moduleNotFound(pkg) {
   return error;
 }
 
-// Resolve a package from <dir>/node_modules without createRequire. Webpack
-// constant-folds createRequire(...) to undefined in the standalone CLI build,
-// which made the old code throw "reading 'resolve'" before ever reaching the
-// on-demand install. Reading the package manifest keeps this bundler-safe.
-function resolveRuntimeEntry(dir, pkg) {
-  const pkgDir = path.join(dir, "node_modules", pkg);
-  let manifest;
-  try {
-    manifest = JSON.parse(fs.readFileSync(path.join(pkgDir, "package.json"), "utf8"));
-  } catch {
-    throw moduleNotFound(pkg);
-  }
-  const exportsField = manifest.exports;
-  let entry;
-  if (typeof exportsField === "string") {
-    entry = exportsField;
-  } else if (exportsField && typeof exportsField === "object") {
-    const root = exportsField["."] ?? exportsField;
-    if (typeof root === "string") entry = root;
-    else if (root && typeof root === "object") entry = root.import || root.default || root.require;
-  }
-  entry ||= manifest.module || manifest.main || "index.js";
-  return pathToFileURL(path.join(pkgDir, entry)).href;
-}
-
-async function importFromRuntime(dir, pkg) {
-  // webpackIgnore is essential: without it webpack replaces this dynamic import
-  // with a context module that always throws MODULE_NOT_FOUND in the standalone
-  // CLI, so the runtime install could never be loaded.
-  return await import(/* webpackIgnore: true */ resolveRuntimeEntry(dir, pkg));
-}
-
 function npmInstall(pkg, version) {
   const cwd = getRuntimeDir();
   fs.mkdirSync(cwd, { recursive: true });
